@@ -25,28 +25,45 @@ This Docker image processes photos into 3D Gaussian Splat models using COLMAP an
 
 ## 🚀 Quick Start
 
-### 1. Build the Docker Image
+### Option A: Test with R2-Hosted Images (Recommended)
+
+The easiest way to test is to upload your test images to your R2 dev bucket:
 
 ```bash
-chmod +x build.sh
+# 1. Create test-images directory and add your photos (5-10 images minimum)
+mkdir -p test-images
+# Copy your test photos to test-images/
+
+# 2. Upload to R2 dev bucket
+./upload-test-images.sh
+
+# 3. Enable R2 public access and generate URLs
+./generate-presigned-urls.sh
+# (Follow the prompts to enable public access and get your R2.dev subdomain)
+
+# 4. Build Docker image
 ./build.sh
+
+# 5. Run local test
+./test-local.sh
 ```
 
-This will take 20-30 minutes as it:
-- Installs CUDA and system dependencies
-- Compiles COLMAP from source
-- Installs Gaussian Splatting and dependencies
+### Option B: Test with External Image URLs
 
-### 2. Test Locally
-
-First, create test images or get URLs to real images:
+If you already have images hosted elsewhere:
 
 ```bash
-# Edit test_input.json with real image URLs
+# 1. Edit test_input.json with your image URLs
 nano test_input.json
+
+# 2. Build Docker image
+./build.sh
+
+# 3. Run local test
+./test-local.sh
 ```
 
-Then run the test:
+### What happens during testing:
 
 ```bash
 chmod +x test-local.sh
