@@ -881,15 +881,37 @@ async function pollProcessingStatus(jobId) {
     }, 5000);
 }
 
-function loadModelInViewer(modelUrl) {
+function loadModelInViewer(modelUrl, metadata = {}) {
     const container = document.getElementById('viewer-container');
+    const controls = document.getElementById('viewer-controls');
+
+    // Load model in iframe
     container.innerHTML = `
         <iframe
+            id="splat-viewer-frame"
             src="https://antimatter15.com/splat/?url=${encodeURIComponent(modelUrl)}"
             style="width: 100%; height: 100%; border: none; border-radius: 15px;"
             allowfullscreen>
         </iframe>
     `;
+
+    // Store current model info
+    currentModel = {
+        url: modelUrl,
+        projectId: metadata.projectId || null,
+        quality: metadata.quality || 'Unknown',
+        photoCount: metadata.photoCount || 0,
+        processingTime: metadata.processingTime || 0,
+        credits: metadata.credits || 0,
+        fileSize: metadata.fileSize || 0,
+        createdAt: metadata.createdAt || Date.now()
+    };
+
+    // Show controls
+    if (controls) controls.style.display = 'flex';
+
+    // Update info panel
+    updateModelInfo();
 }
 
 async function loadProjects() {
@@ -2159,6 +2181,272 @@ function showInsufficientCreditsModal(needed, balance) {
     }
 }
 
+// ===== VIEWER ENHANCEMENTS =====
+
+let currentModel = null;
+
+/**
+ * Update model information display
+ */
+function updateModelInfo() {
+    if (!currentModel) return;
+
+    document.getElementById('info-quality').textContent = currentModel.quality;
+    document.getElementById('info-photos').textContent = currentModel.photoCount || '-';
+
+    if (currentModel.processingTime) {
+        const minutes = Math.floor(currentModel.processingTime / 60);
+        const seconds = currentModel.processingTime % 60;
+        document.getElementById('info-time').textContent = `${minutes}m ${seconds}s`;
+    } else {
+        document.getElementById('info-time').textContent = '-';
+    }
+
+    document.getElementById('info-credits').textContent = currentModel.credits || '-';
+
+    if (currentModel.fileSize) {
+        const sizeMB = (currentModel.fileSize / (1024 * 1024)).toFixed(2);
+        document.getElementById('info-size').textContent = `${sizeMB} MB`;
+    } else {
+        document.getElementById('info-size').textContent = '-';
+    }
+
+    const date = new Date(currentModel.createdAt);
+    document.getElementById('info-date').textContent = date.toLocaleDateString();
+}
+
+/**
+ * Download model file
+ */
+async function downloadModel() {
+    if (!currentModel || !currentModel.url) {
+        showStatus('No model loaded', 'error');
+        return;
+    }
+
+    try {
+        showStatus('Preparing download...', 'info');
+
+        // Create download link
+        const a = document.createElement('a');
+        a.href = currentModel.url;
+        a.download = `splat-${currentModel.projectId || Date.now()}.ply`;
+        a.target = '_blank';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+
+        showStatus('Download started!', 'success');
+    } catch (error) {
+        console.error('Download error:', error);
+        showStatus('Download failed', 'error');
+    }
+}
+
+/**
+ * Generate and show share modal
+ */
+function openShareModal() {
+    if (!currentModel || !currentModel.projectId) {
+        showStatus('No model loaded', 'error');
+        return;
+    }
+
+    const modal = document.getElementById('share-modal');
+    const shareLink = document.getElementById('share-link');
+    const embedCode = document.getElementById('embed-code-display');
+
+    // Generate share URL
+    const shareUrl = `${window.location.origin}/share/${currentModel.projectId}`;
+    shareLink.value = shareUrl;
+
+    // Generate embed code
+    const embedCodeText = `<iframe src="${shareUrl}" width="800" height="600" frameborder="0" allowfullscreen></iframe>`;
+    embedCode.textContent = embedCodeText;
+
+    // Show modal
+    modal.classList.add('active');
+}
+
+/**
+ * Copy text to clipboard
+ */
+async function copyToClipboard(text, successMessage = 'Copied to clipboard!') {
+    try {
+        await navigator.clipboard.writeText(text);
+        showStatus(successMessage, 'success');
+    } catch (error) {
+        console.error('Copy failed:', error);
+        showStatus('Failed to copy', 'error');
+    }
+}
+
+/**
+ * Capture screenshot from viewer
+ */
+async function captureScreenshot() {
+    if (!currentModel) {
+        showStatus('No model loaded', 'error');
+        return;
+    }
+
+    try {
+        showStatus('Capturing screenshot...', 'info');
+
+        // Alternative: Open in new window for screenshot
+        const newWindow = window.open(currentModel.url, '_blank', 'width=800,height=600');
+
+        if (newWindow) {
+            showStatus('Model opened in new window. Use browser screenshot tool (usually Ctrl+Shift+S or Cmd+Shift+4)', 'info');
+        } else {
+            showStatus('Popup blocked. Please allow popups for screenshots.', 'error');
+        }
+
+    } catch (error) {
+        console.error('Screenshot error:', error);
+        showStatus('Screenshot failed', 'error');
+    }
+}
+
+/**
+ * Toggle fullscreen mode
+ */
+function toggleFullscreen() {
+    const container = document.getElementById('viewer-container');
+
+    if (!document.fullscreenElement) {
+        container.requestFullscreen().catch(err => {
+            console.error('Fullscreen error:', err);
+            showStatus('Fullscreen not supported', 'error');
+        });
+    } else {
+        document.exitFullscreen();
+    }
+}
+
+/**
+ * Toggle model info panel
+ */
+function toggleModelInfo() {
+    const infoPanel = document.getElementById('viewer-info');
+    infoPanel.classList.toggle('active');
+}
+
+/**
+ * Share on social media
+ */
+function shareOnSocial(platform) {
+    if (!currentModel || !currentModel.projectId) {
+        showStatus('No model loaded', 'error');
+        return;
+    }
+
+    const shareUrl = encodeURIComponent(`${window.location.origin}/share/${currentModel.projectId}`);
+    const text = encodeURIComponent('Check out this 3D model I created with Splat App!');
+
+    let url;
+
+    switch (platform) {
+        case 'twitter':
+            url = `https://twitter.com/intent/tweet?text=${text}&url=${shareUrl}`;
+            break;
+        case 'facebook':
+            url = `https://www.facebook.com/sharer/sharer.php?u=${shareUrl}`;
+            break;
+        case 'linkedin':
+            url = `https://www.linkedin.com/sharing/share-offsite/?url=${shareUrl}`;
+            break;
+        case 'reddit':
+            url = `https://reddit.com/submit?url=${shareUrl}&title=${text}`;
+            break;
+        default:
+            return;
+    }
+
+    window.open(url, '_blank', 'width=600,height=400');
+}
+
+/**
+ * Setup viewer controls
+ */
+function setupViewerControls() {
+    // Download button
+    const downloadBtn = document.getElementById('download-model-btn');
+    if (downloadBtn) {
+        downloadBtn.addEventListener('click', downloadModel);
+    }
+
+    // Share button
+    const shareBtn = document.getElementById('share-model-btn');
+    if (shareBtn) {
+        shareBtn.addEventListener('click', openShareModal);
+    }
+
+    // Embed code button (also opens share modal)
+    const embedBtn = document.getElementById('embed-code-btn');
+    if (embedBtn) {
+        embedBtn.addEventListener('click', openShareModal);
+    }
+
+    // Screenshot button
+    const screenshotBtn = document.getElementById('screenshot-btn');
+    if (screenshotBtn) {
+        screenshotBtn.addEventListener('click', captureScreenshot);
+    }
+
+    // Fullscreen button
+    const fullscreenBtn = document.getElementById('fullscreen-btn');
+    if (fullscreenBtn) {
+        fullscreenBtn.addEventListener('click', toggleFullscreen);
+    }
+
+    // Model info button
+    const infoBtn = document.getElementById('model-info-btn');
+    if (infoBtn) {
+        infoBtn.addEventListener('click', toggleModelInfo);
+    }
+
+    // Share modal close
+    const closeShareModal = document.getElementById('close-share-modal');
+    if (closeShareModal) {
+        closeShareModal.addEventListener('click', () => {
+            document.getElementById('share-modal').classList.remove('active');
+        });
+    }
+
+    // Copy share link
+    const copyShareLink = document.getElementById('copy-share-link');
+    if (copyShareLink) {
+        copyShareLink.addEventListener('click', () => {
+            const link = document.getElementById('share-link').value;
+            copyToClipboard(link, 'Share link copied!');
+        });
+    }
+
+    // Copy embed code
+    const copyEmbedCode = document.getElementById('copy-embed-code');
+    if (copyEmbedCode) {
+        copyEmbedCode.addEventListener('click', () => {
+            const code = document.getElementById('embed-code-display').textContent;
+            copyToClipboard(code, 'Embed code copied!');
+        });
+    }
+
+    // Social share buttons
+    document.getElementById('share-twitter')?.addEventListener('click', () => shareOnSocial('twitter'));
+    document.getElementById('share-facebook')?.addEventListener('click', () => shareOnSocial('facebook'));
+    document.getElementById('share-linkedin')?.addEventListener('click', () => shareOnSocial('linkedin'));
+    document.getElementById('share-reddit')?.addEventListener('click', () => shareOnSocial('reddit'));
+
+    // Close share modal on overlay click
+    const shareModal = document.getElementById('share-modal');
+    shareModal?.addEventListener('click', (e) => {
+        if (e.target === shareModal) {
+            shareModal.classList.remove('active');
+        }
+    });
+}
+
 // Initialize app
 async function init() {
     await initDB();
@@ -2169,6 +2457,7 @@ async function init() {
     setupProjectFilters();
     setupAuth();
     setupBillingModal();
+    setupViewerControls();
 
     // Load credit balance if logged in
     if (currentUser) {

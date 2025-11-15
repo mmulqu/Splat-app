@@ -398,6 +398,178 @@
             position: relative;
         }
 
+        .viewer-controls {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .viewer-btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            color: #fff;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 0.9rem;
+            font-family: inherit;
+        }
+
+        .viewer-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: #667eea;
+            transform: translateY(-2px);
+        }
+
+        .viewer-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .viewer-btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+        }
+
+        .viewer-btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
+        }
+
+        .viewer-info {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 20px;
+            margin-top: 20px;
+            display: none;
+        }
+
+        .viewer-info.active {
+            display: block;
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+
+        .info-item {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .info-label {
+            color: #a8b2d1;
+            font-size: 0.85rem;
+        }
+
+        .info-value {
+            color: #fff;
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+
+        .share-link-container {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            padding: 12px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin: 15px 0;
+        }
+
+        .share-link-input {
+            flex: 1;
+            background: transparent;
+            border: none;
+            color: #667eea;
+            font-size: 0.9rem;
+            outline: none;
+            font-family: 'Courier New', monospace;
+        }
+
+        .copy-btn {
+            padding: 8px 16px;
+            background: rgba(102, 126, 234, 0.2);
+            border: 1px solid #667eea;
+            border-radius: 6px;
+            color: #667eea;
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: all 0.3s ease;
+            font-family: inherit;
+        }
+
+        .copy-btn:hover {
+            background: rgba(102, 126, 234, 0.3);
+        }
+
+        .embed-code {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            padding: 15px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+            color: #4ade80;
+            white-space: pre-wrap;
+            word-break: break-all;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+
+        .social-share {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 15px;
+        }
+
+        .social-btn {
+            padding: 10px 20px;
+            border-radius: 8px;
+            border: none;
+            color: #fff;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .social-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+        }
+
+        .social-btn.twitter {
+            background: #1DA1F2;
+        }
+
+        .social-btn.facebook {
+            background: #4267B2;
+        }
+
+        .social-btn.linkedin {
+            background: #0077B5;
+        }
+
+        .social-btn.reddit {
+            background: #FF4500;
+        }
+
         .project-controls {
             display: flex;
             gap: 15px;
@@ -1704,6 +1876,66 @@
                             <p>No model loaded. Process some photos first!</p>
                         </div>
                     </div>
+
+                    <!-- Viewer Controls -->
+                    <div class="viewer-controls" id="viewer-controls" style="display: none;">
+                        <button class="viewer-btn viewer-btn-primary" id="download-model-btn">
+                            <span>⬇️</span>
+                            Download Model
+                        </button>
+                        <button class="viewer-btn" id="share-model-btn">
+                            <span>🔗</span>
+                            Share
+                        </button>
+                        <button class="viewer-btn" id="embed-code-btn">
+                            <span>📋</span>
+                            Embed Code
+                        </button>
+                        <button class="viewer-btn" id="screenshot-btn">
+                            <span>📸</span>
+                            Screenshot
+                        </button>
+                        <button class="viewer-btn" id="fullscreen-btn">
+                            <span>⛶</span>
+                            Fullscreen
+                        </button>
+                        <button class="viewer-btn" id="model-info-btn">
+                            <span>ℹ️</span>
+                            Info
+                        </button>
+                    </div>
+
+                    <!-- Model Info -->
+                    <div class="viewer-info" id="viewer-info">
+                        <h3 style="margin-bottom: 15px; color: #fff;">Model Information</h3>
+                        <div class="info-grid">
+                            <div class="info-item">
+                                <span class="info-label">Quality Preset</span>
+                                <span class="info-value" id="info-quality">-</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">Photo Count</span>
+                                <span class="info-value" id="info-photos">-</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">Processing Time</span>
+                                <span class="info-value" id="info-time">-</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">Credits Used</span>
+                                <span class="info-value" id="info-credits">-</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">File Size</span>
+                                <span class="info-value" id="info-size">-</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">Created</span>
+                                <span class="info-value" id="info-date">-</span>
+                            </div>
+                        </div>
+                    </div>
+
                     <div style="margin-top: 20px; text-align: center; color: #a8b2d1;">
                         <p>Use mouse to rotate, scroll to zoom</p>
                     </div>
@@ -1893,6 +2125,47 @@
                         <span id="payment-spinner" style="display: none;">Processing...</span>
                     </button>
                 </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Share Modal -->
+    <div class="modal-overlay" id="share-modal">
+        <div class="billing-modal" style="max-width: 600px;">
+            <div class="modal-header">
+                <h2 class="modal-title">Share Model</h2>
+                <button class="modal-close" id="close-share-modal">×</button>
+            </div>
+            <div class="modal-body">
+                <h3 style="margin-bottom: 15px; color: #fff;">Public Link</h3>
+                <div class="share-link-container">
+                    <input type="text" class="share-link-input" id="share-link" readonly>
+                    <button class="copy-btn" id="copy-share-link">Copy</button>
+                </div>
+
+                <h3 style="margin: 25px 0 15px; color: #fff;">Embed Code</h3>
+                <div class="embed-code" id="embed-code-display"></div>
+                <button class="copy-btn" id="copy-embed-code" style="margin-top: 10px;">Copy Embed Code</button>
+
+                <h3 style="margin: 25px 0 15px; color: #fff;">Share on Social Media</h3>
+                <div class="social-share">
+                    <button class="social-btn twitter" id="share-twitter">
+                        <span>𝕏</span>
+                        Twitter
+                    </button>
+                    <button class="social-btn facebook" id="share-facebook">
+                        <span>f</span>
+                        Facebook
+                    </button>
+                    <button class="social-btn linkedin" id="share-linkedin">
+                        <span>in</span>
+                        LinkedIn
+                    </button>
+                    <button class="social-btn reddit" id="share-reddit">
+                        <span>▶</span>
+                        Reddit
+                    </button>
+                </div>
             </div>
         </div>
     </div>

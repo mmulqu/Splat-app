@@ -232,6 +232,17 @@ export default {
                 return await handleStripeWebhook(request, env);
             }
 
+            // Public share pages
+            if (path.startsWith('/share/') && request.method === 'GET') {
+                const projectId = path.split('/')[2];
+                return await handleSharePage(projectId, env, request);
+            }
+
+            if (path.startsWith('/embed/') && request.method === 'GET') {
+                const projectId = path.split('/')[2];
+                return await handleEmbedPage(projectId, env, request);
+            }
+
             return new Response('Not Found', { status: 404, headers: corsHeaders });
 
         } catch (error) {
@@ -1941,6 +1952,215 @@ async function verifyStripeWebhook(body: string, signature: string, secret: stri
 
     // Parse and return event
     return JSON.parse(body);
+}
+
+/**
+ * Handle public share page
+ */
+async function handleSharePage(projectId: string, env: Env, request: Request): Promise<Response> {
+    try {
+        // Get project info
+        const project = await env.SPLAT_DB.prepare(
+            'SELECT * FROM projects WHERE id = ?'
+        ).bind(projectId).first<any>();
+
+        if (!project) {
+            return new Response('Project not found', { status: 404 });
+        }
+
+        // Check if project is public
+        if (!project.is_public) {
+            // Check if user owns the project
+            const sessionId = getSessionFromRequest(request);
+            if (sessionId) {
+                const user = await Auth.getUserBySession(env.SPLAT_DB, sessionId);
+                if (!user || user.id !== project.user_id) {
+                    return new Response('This project is private', { status: 403 });
+                }
+            } else {
+                return new Response('This project is private', { status: 403 });
+            }
+        }
+
+        if (!project.model_url) {
+            return new Response('Model not yet available', { status: 404 });
+        }
+
+        // Generate share page HTML
+        const html = generateSharePageHTML(project);
+
+        return new Response(html, {
+            headers: {
+                'Content-Type': 'text/html',
+                'Cache-Control': 'public, max-age=3600',
+            },
+        });
+    } catch (error) {
+        console.error('Share page error:', error);
+        return new Response('Error loading share page', { status: 500 });
+    }
+}
+
+/**
+ * Handle embed page
+ */
+async function handleEmbedPage(projectId: string, env: Env, request: Request): Promise<Response> {
+    try {
+        // Get project info
+        const project = await env.SPLAT_DB.prepare(
+            'SELECT * FROM projects WHERE id = ?'
+        ).bind(projectId).first<any>();
+
+        if (!project) {
+            return new Response('Project not found', { status: 404 });
+        }
+
+        // Check if project is public
+        if (!project.is_public) {
+            return new Response('This project is private', { status: 403 });
+        }
+
+        if (!project.model_url) {
+            return new Response('Model not yet available', { status: 404 });
+        }
+
+        // Generate embed page HTML (minimal, just the viewer)
+        const html = generateEmbedPageHTML(project);
+
+        return new Response(html, {
+            headers: {
+                'Content-Type': 'text/html',
+                'Cache-Control': 'public, max-age=3600',
+                'X-Frame-Options': 'ALLOWALL',
+            },
+        });
+    } catch (error) {
+        console.error('Embed page error:', error);
+        return new Response('Error loading embed page', { status: 500 });
+    }
+}
+
+/**
+ * Generate share page HTML
+ */
+function generateSharePageHTML(project: any): string {
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${project.name || 'Splat Model'} - Splat App</title>
+    <meta property="og:title" content="${project.name || 'Splat Model'}" />
+    <meta property="og:description" content="3D Gaussian Splatting Model created with Splat App" />
+    <meta property="og:type" content="website" />
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #fff;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .header {
+            padding: 20px;
+            text-align: center;
+            background: rgba(255, 255, 255, 0.05);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        h1 {
+            font-size: 1.5rem;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .viewer-container {
+            flex: 1;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+        }
+        iframe {
+            flex: 1;
+            border: none;
+            border-radius: 15px;
+            background: rgba(0, 0, 0, 0.3);
+        }
+        .info {
+            margin-top: 20px;
+            text-align: center;
+            color: #a8b2d1;
+        }
+        .btn {
+            display: inline-block;
+            margin: 10px;
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>${project.name || 'Splat Model'}</h1>
+        <p>Created with Splat App</p>
+    </div>
+    <div class="viewer-container">
+        <iframe src="https://antimatter15.com/splat/?url=${encodeURIComponent(project.model_url)}" allowfullscreen></iframe>
+        <div class="info">
+            <p>Use mouse to rotate, scroll to zoom</p>
+            <a href="/" class="btn">Create Your Own 3D Model</a>
+        </div>
+    </div>
+</body>
+</html>`;
+}
+
+/**
+ * Generate embed page HTML
+ */
+function generateEmbedPageHTML(project: any): string {
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${project.name || 'Splat Model'}</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+        }
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+    </style>
+</head>
+<body>
+    <iframe src="https://antimatter15.com/splat/?url=${encodeURIComponent(project.model_url)}" allowfullscreen></iframe>
+</body>
+</html>`;
 }
 
 /**
