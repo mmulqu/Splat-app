@@ -748,6 +748,12 @@ async function loadProjects() {
         };
         const statusColor = statusColors[project.status] || '#a8b2d1';
 
+        // Visibility indicator
+        const isPublic = project.isPublic || false;
+        const visibilityIcon = isPublic ? '🌐' : '🔒';
+        const visibilityText = isPublic ? 'Public' : 'Private';
+        const visibilityColor = isPublic ? '#4ade80' : '#a8b2d1';
+
         card.innerHTML = `
             <div class="project-thumbnail"></div>
             <h3>${projectName}</h3>
@@ -757,6 +763,16 @@ async function loadProjects() {
             <p style="color: ${statusColor}; font-size: 0.9rem;">
                 Status: ${project.status}
             </p>
+            ${currentUser ? `
+                <div class="project-visibility">
+                    <span style="color: ${visibilityColor}; font-size: 0.85rem;">
+                        ${visibilityIcon} ${visibilityText}
+                    </span>
+                    <button class="visibility-toggle-btn" data-project-id="${project.id}" data-is-public="${isPublic}">
+                        ${isPublic ? 'Make Private' : 'Make Public'}
+                    </button>
+                </div>
+            ` : ''}
             ${tags.length > 0 ? `
                 <div class="project-tags">
                     ${tags.map(tag => `<span class="project-tag">${tag}</span>`).join('')}
@@ -764,11 +780,22 @@ async function loadProjects() {
             ` : ''}
         `;
 
-        if (project.status === 'completed' && project.modelUrl) {
-            card.style.cursor = 'pointer';
-            card.addEventListener('click', () => {
+        // Add click handler for completed projects
+        const thumbnail = card.querySelector('.project-thumbnail');
+        if (project.status === 'completed' && project.modelUrl && thumbnail) {
+            thumbnail.style.cursor = 'pointer';
+            thumbnail.addEventListener('click', () => {
                 loadModelInViewer(project.modelUrl);
                 document.querySelector('[data-tab="viewer"]').click();
+            });
+        }
+
+        // Add visibility toggle handler
+        const toggleBtn = card.querySelector('.visibility-toggle-btn');
+        if (toggleBtn) {
+            toggleBtn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                await toggleProjectVisibility(project.id, !isPublic);
             });
         }
 
@@ -1331,6 +1358,45 @@ async function performFullSync() {
         console.error('Full sync error:', error);
         showStatus('Sync failed: ' + error.message, 'error');
         throw error;
+    }
+}
+
+/**
+ * Toggle project visibility (public/private)
+ */
+async function toggleProjectVisibility(projectId, makePublic) {
+    if (!currentUser) {
+        showStatus('Please log in to change project visibility', 'error');
+        return;
+    }
+
+    try {
+        // Update local project
+        const project = await db.get('projects', projectId);
+        if (!project) {
+            showStatus('Project not found', 'error');
+            return;
+        }
+
+        const updatedProject = {
+            ...project,
+            isPublic: makePublic,
+            updatedAt: Date.now()
+        };
+
+        await db.put('projects', updatedProject);
+
+        // Sync to cloud
+        await syncProjectToCloud(updatedProject);
+
+        // Reload projects to show updated state
+        await loadProjects();
+
+        showStatus(`Project is now ${makePublic ? 'public' : 'private'}`, 'success');
+
+    } catch (error) {
+        console.error('Error toggling visibility:', error);
+        showStatus('Failed to update project visibility', 'error');
     }
 }
 

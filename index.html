@@ -519,6 +519,36 @@
             font-size: 0.75rem;
         }
 
+        .project-visibility {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .visibility-toggle-btn {
+            padding: 6px 12px;
+            background: rgba(102, 126, 234, 0.2);
+            border: 1px solid rgba(102, 126, 234, 0.4);
+            border-radius: 8px;
+            color: #667eea;
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .visibility-toggle-btn:hover {
+            background: rgba(102, 126, 234, 0.3);
+            border-color: #667eea;
+            transform: translateY(-1px);
+        }
+
+        .visibility-toggle-btn:active {
+            transform: translateY(0);
+        }
+
         .project-name-input {
             width: 100%;
             padding: 10px 15px;
