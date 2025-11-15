@@ -1,4 +1,5 @@
 import { openDB } from 'idb';
+import { optimizeImage, batchOptimizeImages, calculateSavings, formatBytes } from './image-utils.js';
 
 // Configuration
 const API_ENDPOINT = import.meta.env.VITE_API_ENDPOINT || '/api';
@@ -180,7 +181,7 @@ async function startCamera() {
     }
 }
 
-function capturePhoto() {
+async function capturePhoto() {
     const video = document.getElementById('camera-stream');
     const canvas = document.createElement('canvas');
     canvas.width = video.videoWidth;
@@ -189,11 +190,18 @@ function capturePhoto() {
     const ctx = canvas.getContext('2d');
     ctx.drawImage(video, 0, 0);
 
-    canvas.toBlob(blob => {
+    canvas.toBlob(async blob => {
+        // Create file from blob for optimization
+        const file = new File([blob], `capture_${Date.now()}.jpg`, { type: 'image/jpeg' });
+
+        // Optimize the captured photo
+        const optimized = await optimizeImage(file);
+
         const photo = {
-            blob,
-            url: URL.createObjectURL(blob),
-            timestamp: Date.now()
+            blob: optimized.file,
+            url: URL.createObjectURL(optimized.file),
+            timestamp: Date.now(),
+            metadata: optimized.metadata
         };
 
         capturedPhotos.push(photo);
@@ -312,18 +320,68 @@ function setupFileUpload() {
 }
 
 let selectedFiles = [];
+let optimizedFiles = [];
 
-function handleFiles(files) {
+async function handleFiles(files) {
     selectedFiles = files;
     const fileList = document.getElementById('file-list');
     fileList.innerHTML = '';
 
-    files.forEach(file => {
+    // Show optimization progress
+    const optimizationStatus = document.createElement('div');
+    optimizationStatus.className = 'optimization-status';
+    optimizationStatus.innerHTML = `
+        <div class="optimization-progress">
+            <div class="optimization-text">Optimizing images for faster upload...</div>
+            <div class="optimization-bar">
+                <div class="optimization-fill" id="optimization-fill"></div>
+            </div>
+        </div>
+    `;
+    fileList.appendChild(optimizationStatus);
+
+    // Optimize images with progress
+    const progressCallback = (current, total) => {
+        const fillElement = document.getElementById('optimization-fill');
+        if (fillElement) {
+            const percent = (current / total) * 100;
+            fillElement.style.width = percent + '%';
+        }
+    };
+
+    const optimizationResults = await batchOptimizeImages(Array.from(files), progressCallback);
+    optimizedFiles = optimizationResults.map(r => r.file);
+
+    // Calculate and display savings
+    const savings = calculateSavings(optimizationResults);
+
+    // Clear and show file list with optimization info
+    fileList.innerHTML = '';
+
+    if (savings.totalSavings > 0) {
+        const savingsInfo = document.createElement('div');
+        savingsInfo.className = 'optimization-info';
+        savingsInfo.innerHTML = `
+            <div class="optimization-success">
+                ✅ Images optimized! Saved ${formatBytes(savings.totalSavings)} (${savings.savingsPercent}% reduction)
+            </div>
+        `;
+        fileList.appendChild(savingsInfo);
+    }
+
+    optimizationResults.forEach((result, index) => {
         const fileItem = document.createElement('div');
         fileItem.className = 'file-item';
+        const original = result.metadata.original;
+        const optimized = result.metadata.optimized;
+
         fileItem.innerHTML = `
-            <span>${file.name}</span>
-            <span>${(file.size / 1024 / 1024).toFixed(2)} MB</span>
+            <span>${result.file.name}</span>
+            <div class="file-info">
+                <span class="original-size" style="text-decoration: line-through; color: #888;">${formatBytes(original.size)}</span>
+                <span class="optimized-size" style="color: #4ade80; margin-left: 8px;">${formatBytes(optimized.size)}</span>
+                ${result.metadata.wasResized ? `<span style="color: #667eea; margin-left: 8px;">📐 Resized</span>` : ''}
+            </div>
         `;
         fileList.appendChild(fileItem);
     });
@@ -346,7 +404,9 @@ async function uploadFiles() {
     }
 
     const formData = new FormData();
-    selectedFiles.forEach(file => {
+    // Use optimized files if available, otherwise use original files
+    const filesToUpload = optimizedFiles.length > 0 ? optimizedFiles : selectedFiles;
+    filesToUpload.forEach(file => {
         formData.append('photos', file);
     });
 
