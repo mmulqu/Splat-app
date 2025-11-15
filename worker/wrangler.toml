@@ -15,15 +15,10 @@ binding = "SPLAT_DB"
 database_name = "splat-app-db-dev"
 database_id = "b187e28a-c25d-4183-908a-e0efe3aef99b"
 
-# Queue for processing jobs
+# Queue for processing jobs (producer only - consumer not needed yet)
 [[queues.producers]]
 binding = "PROCESSING_QUEUE"
 queue = "splat-processing-queue-dev"
-
-[[queues.consumers]]
-queue = "splat-processing-queue-dev"
-max_batch_size = 10
-max_batch_timeout = 30
 
 # Environment variables for DEV (set via `wrangler secret put`)
 # RUNPOD_API_KEY - Your RunPod API key
@@ -55,11 +50,6 @@ database_id = "your-prod-database-id-here"
 [[env.production.queues.producers]]
 binding = "PROCESSING_QUEUE"
 queue = "splat-processing-queue-prod"
-
-[[env.production.queues.consumers]]
-queue = "splat-processing-queue-prod"
-max_batch_size = 10
-max_batch_timeout = 30
 
 # Environment variables for PRODUCTION (set via `wrangler secret put --env production`)
 # RUNPOD_API_KEY
