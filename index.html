@@ -376,6 +376,96 @@
             color: #ffc107;
             font-size: 0.85rem;
         }
+
+        /* Quality Preset Selector */
+        .quality-selector {
+            margin: 30px 0;
+            padding: 25px;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .quality-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .quality-card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 20px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-align: center;
+            position: relative;
+        }
+
+        .quality-card:hover {
+            transform: translateY(-3px);
+            background: rgba(255, 255, 255, 0.08);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        .quality-card.selected {
+            border-color: var(--preset-color, #667eea);
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+            box-shadow: 0 0 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .quality-icon {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            display: block;
+        }
+
+        .quality-name {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #fff;
+            margin-bottom: 8px;
+        }
+
+        .quality-description {
+            font-size: 0.85rem;
+            color: #a8b2d1;
+            margin-bottom: 12px;
+            line-height: 1.4;
+        }
+
+        .quality-stats {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            font-size: 0.8rem;
+        }
+
+        .quality-stat {
+            display: flex;
+            justify-content: space-between;
+            color: #a8b2d1;
+        }
+
+        .quality-stat-value {
+            color: #fff;
+            font-weight: 500;
+        }
+
+        .quality-recommended {
+            position: absolute;
+            top: -10px;
+            right: -10px;
+            background: linear-gradient(135deg, #facc15 0%, #f59e0b 100%);
+            color: #1a1a2e;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            box-shadow: 0 4px 10px rgba(250, 204, 21, 0.4);
+        }
     </style>
 </head>
 <body>
@@ -413,6 +503,14 @@
 
                     <div class="thumbnail-grid" id="thumbnail-grid"></div>
 
+                    <!-- Quality Preset Selector for Capture -->
+                    <div id="quality-selector-capture" class="quality-selector" style="display: none;">
+                        <h3 style="color: #667eea; margin-bottom: 15px; text-align: center;">Select Quality</h3>
+                        <div class="quality-grid" id="quality-grid-capture">
+                            <!-- Quality presets will be loaded here -->
+                        </div>
+                    </div>
+
                     <button class="btn" id="process-captures" style="display: none;">Process Reconstruction</button>
                 </div>
             </div>
@@ -434,6 +532,14 @@
                     <input type="file" id="file-input" accept="image/*" multiple style="display: none;">
 
                     <div class="file-list" id="file-list"></div>
+
+                    <!-- Quality Preset Selector -->
+                    <div id="quality-selector" class="quality-selector" style="display: none;">
+                        <h3 style="color: #667eea; margin-bottom: 15px; text-align: center;">Select Quality</h3>
+                        <div class="quality-grid" id="quality-grid">
+                            <!-- Quality presets will be loaded here -->
+                        </div>
+                    </div>
 
                     <button class="btn" id="upload-btn" style="display: none;">Upload & Process</button>
 

@@ -3,6 +3,8 @@
  * Handles photo uploads, R2 storage, and GPU processing orchestration
  */
 
+import { getQualityPreset, calculatePresetCost, getAllQualityPresets } from './quality-presets';
+
 interface Env {
     SPLAT_BUCKET: R2Bucket;
     SPLAT_DB: D1Database;
@@ -23,6 +25,7 @@ interface UploadResponse {
 
 interface ProcessRequest {
     projectId: string;
+    qualityPreset?: string; // preview, standard, high, ultra
 }
 
 interface ProcessResponse {
@@ -107,6 +110,11 @@ export default {
             // Price estimate endpoint
             if (path === '/api/estimate' && request.method === 'POST') {
                 return await handlePriceEstimate(request, env, corsHeaders);
+            }
+
+            // Quality presets endpoint
+            if (path === '/api/quality-presets' && request.method === 'GET') {
+                return await handleQualityPresets(corsHeaders);
             }
 
             // Webhook endpoint for RunPod callbacks
@@ -196,7 +204,7 @@ async function handleUpload(request: Request, env: Env, corsHeaders: Record<stri
 async function handleProcess(request: Request, env: Env, corsHeaders: Record<string, string>): Promise<Response> {
     try {
         const body = await request.json() as ProcessRequest;
-        const { projectId } = body;
+        const { projectId, qualityPreset = 'standard' } = body;
 
         if (!projectId) {
             return jsonResponse({ success: false, error: 'Project ID required' }, 400, corsHeaders);
@@ -211,12 +219,20 @@ async function handleProcess(request: Request, env: Env, corsHeaders: Record<str
             return jsonResponse({ success: false, error: 'Insufficient photos (minimum 5)' }, 400, corsHeaders);
         }
 
+        // Get quality preset
+        const preset = getQualityPreset(qualityPreset);
+
         // Create processing job
         const jobId = crypto.randomUUID();
 
         await env.SPLAT_DB.prepare(
             'INSERT INTO jobs (id, project_id, status, created_at) VALUES (?, ?, ?, ?)'
         ).bind(jobId, projectId, 'queued', Date.now()).run();
+
+        // Store quality preset in job metadata
+        await env.SPLAT_DB.prepare(
+            'UPDATE jobs SET external_id = ? WHERE id = ?'
+        ).bind(JSON.stringify({ qualityPreset, iterations: preset.iterations }), jobId).run();
 
         // Update project status
         await env.SPLAT_DB.prepare(
@@ -232,7 +248,7 @@ async function handleProcess(request: Request, env: Env, corsHeaders: Record<str
 
         // Trigger GPU processing with RunPod
         if (env.RUNPOD_API_KEY && env.RUNPOD_ENDPOINT_ID) {
-            await triggerRunPodProcessing(jobId, projectId, photos.results, env);
+            await triggerRunPodProcessing(jobId, projectId, photos.results, env, preset.iterations);
         }
 
         const response: ProcessResponse = {
@@ -321,7 +337,7 @@ async function handleListProjects(env: Env, corsHeaders: Record<string, string>)
 /**
  * Trigger RunPod GPU processing
  */
-async function triggerRunPodProcessing(jobId: string, projectId: string, photos: any[], env: Env) {
+async function triggerRunPodProcessing(jobId: string, projectId: string, photos: any[], env: Env, iterations: number = 7000) {
     try {
         // Generate pre-signed URLs for photos
         const imageUrls = await Promise.all(
@@ -356,7 +372,7 @@ async function triggerRunPodProcessing(jobId: string, projectId: string, photos:
                     input: {
                         project_id: projectId,
                         image_urls: imageUrls,
-                        iterations: 7000,
+                        iterations: iterations,
                         upload_url: uploadUrl,
                         webhook_url: webhookUrl,
                     },
@@ -441,6 +457,14 @@ async function handlePriceEstimate(request: Request, env: Env, corsHeaders: Reco
         console.error('Price estimate error:', error);
         return jsonResponse({ error: 'Failed to calculate estimate' }, 500, corsHeaders);
     }
+}
+
+/**
+ * Handle quality presets request
+ */
+async function handleQualityPresets(corsHeaders: Record<string, string>): Promise<Response> {
+    const presets = getAllQualityPresets();
+    return jsonResponse({ presets }, 200, corsHeaders);
 }
 
 /**

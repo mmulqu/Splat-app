@@ -6,6 +6,10 @@ const API_ENDPOINT = import.meta.env.VITE_API_ENDPOINT || '/api';
 // IndexedDB setup
 let db;
 
+// Quality presets
+let qualityPresets = [];
+let selectedQuality = 'standard';
+
 async function initDB() {
     db = await openDB('SplatAppDB', 1, {
         upgrade(db) {
@@ -19,6 +23,114 @@ async function initDB() {
             }
         },
     });
+}
+
+// Quality Presets Management
+async function loadQualityPresets() {
+    try {
+        const response = await fetch(`${API_ENDPOINT}/quality-presets`);
+        if (!response.ok) {
+            throw new Error('Failed to load quality presets');
+        }
+
+        const data = await response.json();
+        qualityPresets = data.presets;
+
+        // Render quality presets in both capture and upload tabs
+        renderQualityPresets('quality-grid-capture');
+        renderQualityPresets('quality-grid');
+
+    } catch (error) {
+        console.error('Error loading quality presets:', error);
+        // Use fallback presets
+        qualityPresets = [
+            {
+                id: 'preview',
+                name: 'Preview',
+                description: 'Fast preview (5 min)',
+                iterations: 3000,
+                icon: '🟢',
+                color: '#4ade80'
+            },
+            {
+                id: 'standard',
+                name: 'Standard',
+                description: 'Balanced quality (15 min)',
+                iterations: 7000,
+                icon: '🟡',
+                color: '#facc15'
+            },
+            {
+                id: 'high',
+                name: 'High',
+                description: 'High quality (30 min)',
+                iterations: 15000,
+                icon: '🟠',
+                color: '#fb923c'
+            },
+            {
+                id: 'ultra',
+                name: 'Ultra',
+                description: 'Maximum quality (60 min)',
+                iterations: 30000,
+                icon: '🔴',
+                color: '#f87171'
+            }
+        ];
+        renderQualityPresets('quality-grid-capture');
+        renderQualityPresets('quality-grid');
+    }
+}
+
+function renderQualityPresets(containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    container.innerHTML = '';
+
+    qualityPresets.forEach((preset, index) => {
+        const card = document.createElement('div');
+        card.className = `quality-card ${preset.id === selectedQuality ? 'selected' : ''}`;
+        card.dataset.presetId = preset.id;
+        card.style.setProperty('--preset-color', preset.color);
+
+        const isRecommended = preset.id === 'standard';
+
+        card.innerHTML = `
+            ${isRecommended ? '<div class="quality-recommended">RECOMMENDED</div>' : ''}
+            <span class="quality-icon">${preset.icon}</span>
+            <div class="quality-name">${preset.name}</div>
+            <div class="quality-description">${preset.description}</div>
+            <div class="quality-stats">
+                <div class="quality-stat">
+                    <span>Iterations:</span>
+                    <span class="quality-stat-value">${preset.iterations.toLocaleString()}</span>
+                </div>
+            </div>
+        `;
+
+        card.addEventListener('click', () => selectQualityPreset(preset.id));
+        container.appendChild(card);
+    });
+}
+
+function selectQualityPreset(presetId) {
+    selectedQuality = presetId;
+
+    // Update all quality cards
+    document.querySelectorAll('.quality-card').forEach(card => {
+        if (card.dataset.presetId === presetId) {
+            card.classList.add('selected');
+        } else {
+            card.classList.remove('selected');
+        }
+    });
+
+    // Update price estimate
+    const photoCount = capturedPhotos.length || selectedFiles.length;
+    if (photoCount >= 5) {
+        updatePriceEstimate(photoCount, 'RTX_4090', presetId);
+    }
 }
 
 // Tab navigation
@@ -108,7 +220,14 @@ function stopCamera() {
 
 function updatePhotoCount() {
     document.getElementById('photo-count').textContent = capturedPhotos.length;
-    updatePriceEstimate(capturedPhotos.length);
+
+    // Show quality selector when enough photos
+    if (capturedPhotos.length >= 5) {
+        document.getElementById('quality-selector-capture').style.display = 'block';
+        updatePriceEstimate(capturedPhotos.length, 'RTX_4090', selectedQuality);
+    } else {
+        document.getElementById('quality-selector-capture').style.display = 'none';
+    }
 }
 
 function addThumbnail(url) {
@@ -209,8 +328,15 @@ function handleFiles(files) {
         fileList.appendChild(fileItem);
     });
 
+    // Show quality selector when enough files
+    if (files.length >= 5) {
+        document.getElementById('quality-selector').style.display = 'block';
+        updatePriceEstimate(files.length, 'RTX_4090', selectedQuality);
+    } else {
+        document.getElementById('quality-selector').style.display = 'none';
+    }
+
     document.getElementById('upload-btn').style.display = files.length > 0 ? 'inline-block' : 'none';
-    updatePriceEstimate(files.length);
 }
 
 async function uploadFiles() {
@@ -269,7 +395,8 @@ async function saveProject(projectData) {
     const project = {
         ...projectData,
         createdAt: Date.now(),
-        status: 'processing'
+        status: 'processing',
+        qualityPreset: selectedQuality
     };
 
     const id = await db.add('projects', project);
@@ -281,7 +408,10 @@ async function startProcessing(projectId) {
         const response = await fetch(`${API_ENDPOINT}/process`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ projectId })
+            body: JSON.stringify({
+                projectId,
+                qualityPreset: selectedQuality
+            })
         });
 
         if (!response.ok) {
@@ -347,11 +477,12 @@ async function loadProjects() {
     projects.reverse().forEach(project => {
         const card = document.createElement('div');
         card.className = 'project-card';
+        const quality = project.qualityPreset ? `(${project.qualityPreset})` : '';
         card.innerHTML = `
             <div class="project-thumbnail"></div>
             <h3>Project ${project.id}</h3>
             <p style="color: #a8b2d1; font-size: 0.9rem;">
-                ${new Date(project.createdAt).toLocaleDateString()}
+                ${new Date(project.createdAt).toLocaleDateString()} ${quality}
             </p>
             <p style="color: ${project.status === 'completed' ? '#2ecc71' : '#f39c12'}; font-size: 0.9rem;">
                 Status: ${project.status}
@@ -383,11 +514,14 @@ function showStatus(message, type = 'info') {
 }
 
 // Price estimation
-async function updatePriceEstimate(photoCount, gpuType = 'RTX_4090') {
+async function updatePriceEstimate(photoCount, gpuType = 'RTX_4090', qualityPresetId = 'standard') {
     if (photoCount < 5) {
         hidePriceEstimate();
         return;
     }
+
+    const preset = qualityPresets.find(p => p.id === qualityPresetId) || qualityPresets.find(p => p.id === 'standard');
+    const iterations = preset ? preset.iterations : 7000;
 
     try {
         const response = await fetch(`${API_ENDPOINT}/estimate`, {
@@ -395,7 +529,7 @@ async function updatePriceEstimate(photoCount, gpuType = 'RTX_4090') {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 photoCount,
-                iterations: 7000,
+                iterations,
                 gpuType
             })
         });
@@ -405,17 +539,17 @@ async function updatePriceEstimate(photoCount, gpuType = 'RTX_4090') {
         }
 
         const estimate = await response.json();
-        displayPriceEstimate(estimate);
+        displayPriceEstimate(estimate, preset);
 
     } catch (error) {
         console.error('Price estimate error:', error);
         // Fallback to local calculation
-        const estimate = calculateLocalEstimate(photoCount, gpuType);
-        displayPriceEstimate(estimate);
+        const estimate = calculateLocalEstimate(photoCount, gpuType, iterations);
+        displayPriceEstimate(estimate, preset);
     }
 }
 
-function calculateLocalEstimate(photoCount, gpuType = 'RTX_4090') {
+function calculateLocalEstimate(photoCount, gpuType = 'RTX_4090', iterations = 7000) {
     const gpuPrices = {
         'RTX_4090': 0.35,
         'RTX_3090': 0.20,
@@ -426,7 +560,7 @@ function calculateLocalEstimate(photoCount, gpuType = 'RTX_4090') {
 
     const hourlyRate = gpuPrices[gpuType] || 0.35;
     const colmapTime = (photoCount / 10) * 90;
-    const trainingTime = 7000 * 0.5;
+    const trainingTime = iterations * 0.5;
     const overhead = 60;
     const totalSeconds = colmapTime + trainingTime + overhead;
     const totalHours = totalSeconds / 3600;
@@ -445,7 +579,7 @@ function calculateLocalEstimate(photoCount, gpuType = 'RTX_4090') {
     };
 }
 
-function displayPriceEstimate(estimate) {
+function displayPriceEstimate(estimate, preset) {
     // Create or update price estimate display
     let estimateDiv = document.getElementById('price-estimate');
 
@@ -467,6 +601,7 @@ function displayPriceEstimate(estimate) {
 
     const minutes = Math.floor(estimate.estimatedTime / 60);
     const seconds = estimate.estimatedTime % 60;
+    const qualityName = preset ? `${preset.icon} ${preset.name}` : 'Standard';
 
     estimateDiv.innerHTML = `
         <div class="estimate-header">
@@ -477,6 +612,10 @@ function displayPriceEstimate(estimate) {
             <div class="detail-row">
                 <span>⏱️ Processing Time:</span>
                 <span>${minutes}m ${seconds}s</span>
+            </div>
+            <div class="detail-row">
+                <span>✨ Quality:</span>
+                <span>${qualityName}</span>
             </div>
             <div class="detail-row">
                 <span>🎮 GPU:</span>
@@ -507,7 +646,7 @@ function displayPriceEstimate(estimate) {
             </details>
         </div>
         <div class="estimate-note">
-            <small>💡 Estimate based on ${estimate.gpuType.replace('_', ' ')} GPU. Actual cost may vary.</small>
+            <small>💡 Estimate based on ${qualityName} quality with ${estimate.gpuType.replace('_', ' ')} GPU. Actual cost may vary.</small>
         </div>
     `;
 
@@ -531,6 +670,7 @@ if ('serviceWorker' in navigator) {
 // Initialize app
 async function init() {
     await initDB();
+    await loadQualityPresets();
     setupTabs();
     setupFileUpload();
 
