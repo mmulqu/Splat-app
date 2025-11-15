@@ -1,0 +1,20 @@
+{
+  "input": {
+    "project_id": "test-project-123",
+    "image_urls": [
+      "https://example.com/photo1.jpg",
+      "https://example.com/photo2.jpg",
+      "https://example.com/photo3.jpg",
+      "https://example.com/photo4.jpg",
+      "https://example.com/photo5.jpg",
+      "https://example.com/photo6.jpg",
+      "https://example.com/photo7.jpg",
+      "https://example.com/photo8.jpg",
+      "https://example.com/photo9.jpg",
+      "https://example.com/photo10.jpg"
+    ],
+    "iterations": 7000,
+    "upload_url": "https://your-r2-bucket.com/models/test-model.ply?X-Amz-Signature=...",
+    "webhook_url": "https://your-worker.workers.dev/api/webhook/test-job-123"
+  }
+}

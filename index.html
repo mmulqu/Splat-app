@@ -1,0 +1,2197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="3D Gaussian Splatting Reconstruction App">
+    <meta name="theme-color" content="#1a1a2e">
+    <title>Splat App - 3D Reconstruction</title>
+    <link rel="manifest" href="/manifest.json">
+    <link rel="icon" type="image/svg+xml" href="/icon.svg">
+    <link rel="apple-touch-icon" href="/icon-192.png">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #fff;
+            min-height: 100vh;
+        }
+
+        #app {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            padding: 40px 20px;
+            position: relative;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .header p {
+            color: #a8b2d1;
+            font-size: 1.1rem;
+        }
+
+        .user-section {
+            display: flex;
+            justify-content: center;
+            margin-top: 20px;
+        }
+
+        .auth-buttons {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .auth-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 12px 24px;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            color: #fff;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-family: inherit;
+        }
+
+        .auth-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: #667eea;
+            transform: translateY(-2px);
+        }
+
+        .google-btn:hover {
+            border-color: #4285F4;
+        }
+
+        .github-btn:hover {
+            border-color: #fff;
+        }
+
+        .user-profile {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            padding: 12px 20px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-radius: 50px;
+        }
+
+        .user-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            border: 2px solid #667eea;
+        }
+
+        .user-info {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+        }
+
+        .user-name {
+            font-weight: 600;
+            color: #fff;
+            font-size: 0.95rem;
+        }
+
+        .user-email {
+            font-size: 0.85rem;
+            color: #a8b2d1;
+        }
+
+        .logout-btn {
+            padding: 8px 16px;
+            background: rgba(248, 113, 113, 0.2);
+            border: 1px solid rgba(248, 113, 113, 0.4);
+            border-radius: 8px;
+            color: #f87171;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.3s ease;
+            font-family: inherit;
+        }
+
+        .logout-btn:hover {
+            background: rgba(248, 113, 113, 0.3);
+            border-color: #f87171;
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 20px;
+            padding: 30px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+            border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .tab {
+            padding: 15px 25px;
+            background: none;
+            border: none;
+            color: #a8b2d1;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+            border-bottom: 3px solid transparent;
+        }
+
+        .tab.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .upload-section {
+            text-align: center;
+            padding: 40px;
+        }
+
+        .upload-zone {
+            border: 3px dashed rgba(102, 126, 234, 0.5);
+            border-radius: 15px;
+            padding: 60px 40px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: rgba(102, 126, 234, 0.05);
+        }
+
+        .upload-zone:hover {
+            border-color: #667eea;
+            background: rgba(102, 126, 234, 0.1);
+        }
+
+        .upload-zone.dragover {
+            background: rgba(102, 126, 234, 0.2);
+            transform: scale(1.02);
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            border-radius: 30px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin: 10px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .file-list {
+            margin-top: 20px;
+            text-align: left;
+        }
+
+        .file-item {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .file-item > span:first-child {
+            width: 100%;
+            font-weight: 500;
+        }
+
+        .file-info {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            font-size: 0.9rem;
+        }
+
+        .optimization-status {
+            background: rgba(102, 126, 234, 0.1);
+            border: 1px solid rgba(102, 126, 234, 0.3);
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 10px;
+        }
+
+        .optimization-progress {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .optimization-text {
+            color: #667eea;
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+
+        .optimization-bar {
+            width: 100%;
+            height: 6px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .optimization-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        .optimization-info {
+            background: rgba(74, 222, 128, 0.1);
+            border: 1px solid rgba(74, 222, 128, 0.3);
+            padding: 12px;
+            margin: 10px 0;
+            border-radius: 10px;
+        }
+
+        .optimization-success {
+            color: #4ade80;
+            font-size: 0.95rem;
+            font-weight: 500;
+            text-align: center;
+        }
+
+        .blur-warning {
+            color: #f87171;
+            font-size: 0.95rem;
+            font-weight: 500;
+            text-align: center;
+        }
+
+        .blur-success {
+            color: #4ade80;
+            font-size: 0.95rem;
+            font-weight: 500;
+            text-align: center;
+        }
+
+        .blur-recommendation {
+            color: #a8b2d1;
+            font-size: 0.85rem;
+            margin-top: 6px;
+            text-align: center;
+        }
+
+        .file-item-blurry {
+            border: 2px solid rgba(248, 113, 113, 0.5);
+            background: rgba(248, 113, 113, 0.05);
+        }
+
+        .file-item-duplicate {
+            border: 2px solid rgba(250, 204, 21, 0.5);
+            background: rgba(250, 204, 21, 0.05);
+        }
+
+        .file-item-blurry.file-item-duplicate {
+            border: 2px solid rgba(248, 113, 113, 0.7);
+            background: linear-gradient(135deg, rgba(248, 113, 113, 0.05) 0%, rgba(250, 204, 21, 0.05) 100%);
+        }
+
+        .thumbnail-container {
+            position: relative;
+            display: inline-block;
+        }
+
+        .blur-indicator {
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 20px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        .status-message {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        .status-message.info {
+            background: rgba(52, 152, 219, 0.2);
+            border: 1px solid rgba(52, 152, 219, 0.5);
+        }
+
+        .status-message.success {
+            background: rgba(46, 204, 113, 0.2);
+            border: 1px solid rgba(46, 204, 113, 0.5);
+        }
+
+        .status-message.error {
+            background: rgba(231, 76, 60, 0.2);
+            border: 1px solid rgba(231, 76, 60, 0.5);
+        }
+
+        #viewer-container {
+            width: 100%;
+            height: 600px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 15px;
+            position: relative;
+        }
+
+        .viewer-controls {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .viewer-btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            color: #fff;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 0.9rem;
+            font-family: inherit;
+        }
+
+        .viewer-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: #667eea;
+            transform: translateY(-2px);
+        }
+
+        .viewer-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .viewer-btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+        }
+
+        .viewer-btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
+        }
+
+        .viewer-info {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 20px;
+            margin-top: 20px;
+            display: none;
+        }
+
+        .viewer-info.active {
+            display: block;
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+
+        .info-item {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .info-label {
+            color: #a8b2d1;
+            font-size: 0.85rem;
+        }
+
+        .info-value {
+            color: #fff;
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+
+        .share-link-container {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            padding: 12px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin: 15px 0;
+        }
+
+        .share-link-input {
+            flex: 1;
+            background: transparent;
+            border: none;
+            color: #667eea;
+            font-size: 0.9rem;
+            outline: none;
+            font-family: 'Courier New', monospace;
+        }
+
+        .copy-btn {
+            padding: 8px 16px;
+            background: rgba(102, 126, 234, 0.2);
+            border: 1px solid #667eea;
+            border-radius: 6px;
+            color: #667eea;
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: all 0.3s ease;
+            font-family: inherit;
+        }
+
+        .copy-btn:hover {
+            background: rgba(102, 126, 234, 0.3);
+        }
+
+        .embed-code {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            padding: 15px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+            color: #4ade80;
+            white-space: pre-wrap;
+            word-break: break-all;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+
+        .social-share {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 15px;
+        }
+
+        .social-btn {
+            padding: 10px 20px;
+            border-radius: 8px;
+            border: none;
+            color: #fff;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .social-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+        }
+
+        .social-btn.twitter {
+            background: #1DA1F2;
+        }
+
+        .social-btn.facebook {
+            background: #4267B2;
+        }
+
+        .social-btn.linkedin {
+            background: #0077B5;
+        }
+
+        .social-btn.reddit {
+            background: #FF4500;
+        }
+
+        .project-controls {
+            display: flex;
+            gap: 15px;
+            margin: 20px 0;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .search-bar {
+            flex: 1;
+            min-width: 250px;
+        }
+
+        .search-bar input {
+            width: 100%;
+            padding: 12px 20px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            color: #fff;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+        }
+
+        .search-bar input:focus {
+            outline: none;
+            border-color: #667eea;
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .search-bar input::placeholder {
+            color: #a8b2d1;
+        }
+
+        .filter-controls {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .filter-select {
+            padding: 10px 15px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            color: #fff;
+            font-size: 0.95rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .filter-select:hover {
+            border-color: #667eea;
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .filter-select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .filter-select option {
+            background: #1a1a2e;
+            color: #fff;
+        }
+
+        .tags-filter {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 20px;
+            min-height: 36px;
+        }
+
+        .tags-list {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .tag {
+            padding: 6px 12px;
+            background: rgba(102, 126, 234, 0.2);
+            border: 1px solid rgba(102, 126, 234, 0.4);
+            border-radius: 20px;
+            color: #667eea;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            user-select: none;
+        }
+
+        .tag:hover {
+            background: rgba(102, 126, 234, 0.3);
+            border-color: #667eea;
+        }
+
+        .tag.active {
+            background: rgba(102, 126, 234, 0.5);
+            border-color: #667eea;
+            color: #fff;
+            box-shadow: 0 0 10px rgba(102, 126, 234, 0.3);
+        }
+
+        .project-tags {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-top: 8px;
+        }
+
+        .project-tag {
+            padding: 4px 10px;
+            background: rgba(102, 126, 234, 0.2);
+            border: 1px solid rgba(102, 126, 234, 0.3);
+            border-radius: 15px;
+            color: #667eea;
+            font-size: 0.75rem;
+        }
+
+        .project-visibility {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .visibility-toggle-btn {
+            padding: 6px 12px;
+            background: rgba(102, 126, 234, 0.2);
+            border: 1px solid rgba(102, 126, 234, 0.4);
+            border-radius: 8px;
+            color: #667eea;
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .visibility-toggle-btn:hover {
+            background: rgba(102, 126, 234, 0.3);
+            border-color: #667eea;
+            transform: translateY(-1px);
+        }
+
+        .visibility-toggle-btn:active {
+            transform: translateY(0);
+        }
+
+        .project-name-input {
+            width: 100%;
+            padding: 10px 15px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            color: #fff;
+            font-size: 0.95rem;
+            margin-bottom: 10px;
+            transition: all 0.3s ease;
+        }
+
+        .project-name-input:focus {
+            outline: none;
+            border-color: #667eea;
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .project-name-input::placeholder {
+            color: #a8b2d1;
+        }
+
+        .tags-input-container {
+            margin-bottom: 15px;
+        }
+
+        .tags-input {
+            width: 100%;
+            padding: 10px 15px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            color: #fff;
+            font-size: 0.95rem;
+            transition: all 0.3s ease;
+        }
+
+        .tags-input:focus {
+            outline: none;
+            border-color: #667eea;
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .tags-input::placeholder {
+            color: #a8b2d1;
+        }
+
+        /* Advanced Settings */
+        .advanced-settings-panel {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 15px;
+            margin-top: 20px;
+        }
+
+        .advanced-settings-header {
+            color: #667eea;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            user-select: none;
+            list-style: none;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .advanced-settings-header::-webkit-details-marker {
+            display: none;
+        }
+
+        .advanced-settings-header::before {
+            content: '▶';
+            transition: transform 0.3s ease;
+            display: inline-block;
+        }
+
+        .advanced-settings-panel[open] .advanced-settings-header::before {
+            transform: rotate(90deg);
+        }
+
+        .advanced-settings-content {
+            margin-top: 20px;
+        }
+
+        .param-group {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+
+        .param-group-title {
+            color: #a8b2d1;
+            font-size: 0.9rem;
+            font-weight: 600;
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .param-control {
+            margin-bottom: 15px;
+        }
+
+        .param-control:last-child {
+            margin-bottom: 0;
+        }
+
+        .param-label {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+            color: #fff;
+            font-size: 0.875rem;
+        }
+
+        .param-value {
+            color: #667eea;
+            font-weight: 600;
+            font-size: 0.85rem;
+        }
+
+        .param-input {
+            width: 100%;
+            padding: 8px 12px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 8px;
+            color: #fff;
+            font-size: 0.875rem;
+            transition: all 0.3s ease;
+        }
+
+        .param-input:focus {
+            outline: none;
+            border-color: #667eea;
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .param-range {
+            width: 100%;
+            height: 6px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+            outline: none;
+            -webkit-appearance: none;
+        }
+
+        .param-range::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            background: #667eea;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .param-range::-webkit-slider-thumb:hover {
+            background: #7c8ef0;
+            transform: scale(1.1);
+        }
+
+        .param-range::-moz-range-thumb {
+            width: 18px;
+            height: 18px;
+            background: #667eea;
+            border: none;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .param-range::-moz-range-thumb:hover {
+            background: #7c8ef0;
+            transform: scale(1.1);
+        }
+
+        .param-description {
+            color: #a8b2d1;
+            font-size: 0.75rem;
+            margin-top: 4px;
+            font-style: italic;
+        }
+
+        .param-checkbox-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .param-checkbox {
+            width: 20px;
+            height: 20px;
+            accent-color: #667eea;
+            cursor: pointer;
+        }
+
+        .projects-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .project-card {
+            position: relative;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 15px;
+            padding: 20px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .project-card:hover {
+            transform: translateY(-5px);
+            background: rgba(255, 255, 255, 0.08);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .project-thumbnail {
+            width: 100%;
+            height: 150px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+            margin-bottom: 15px;
+        }
+
+        .camera-preview {
+            width: 100%;
+            max-width: 640px;
+            margin: 20px auto;
+            border-radius: 15px;
+            overflow: hidden;
+        }
+
+        #camera-stream {
+            width: 100%;
+            display: block;
+        }
+
+        .capture-count {
+            font-size: 1.2rem;
+            margin: 20px 0;
+            color: #667eea;
+        }
+
+        .thumbnail-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .thumbnail {
+            width: 100%;
+            height: 100px;
+            object-fit: cover;
+            border-radius: 8px;
+            border: 2px solid rgba(102, 126, 234, 0.3);
+        }
+
+        /* Price Estimate Box */
+        .price-estimate-box {
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+            border: 2px solid rgba(102, 126, 234, 0.3);
+            border-radius: 15px;
+            padding: 25px;
+            margin: 30px 0;
+            backdrop-filter: blur(10px);
+            display: none;
+        }
+
+        .estimate-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .estimate-header h3 {
+            font-size: 1.3rem;
+            color: #667eea;
+            margin: 0;
+        }
+
+        .cost-amount {
+            font-size: 2rem;
+            font-weight: bold;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .estimate-details {
+            display: grid;
+            gap: 12px;
+            margin-bottom: 15px;
+        }
+
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 8px;
+        }
+
+        .detail-row span:first-child {
+            color: #a8b2d1;
+        }
+
+        .detail-row span:last-child {
+            color: #fff;
+            font-weight: 500;
+        }
+
+        .estimate-breakdown {
+            margin-top: 15px;
+        }
+
+        .estimate-breakdown details {
+            cursor: pointer;
+        }
+
+        .estimate-breakdown summary {
+            color: #667eea;
+            padding: 10px;
+            border-radius: 8px;
+            background: rgba(102, 126, 234, 0.1);
+            transition: all 0.3s ease;
+        }
+
+        .estimate-breakdown summary:hover {
+            background: rgba(102, 126, 234, 0.2);
+        }
+
+        .breakdown-content {
+            margin-top: 15px;
+            padding: 15px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+        }
+
+        .breakdown-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .breakdown-row:last-child {
+            border-bottom: none;
+        }
+
+        .breakdown-row span:first-child {
+            color: #a8b2d1;
+            font-size: 0.9rem;
+        }
+
+        .breakdown-row span:last-child {
+            color: #667eea;
+            font-weight: 500;
+        }
+
+        .estimate-note {
+            margin-top: 15px;
+            padding: 12px;
+            background: rgba(255, 193, 7, 0.1);
+            border-left: 3px solid #ffc107;
+            border-radius: 5px;
+        }
+
+        .estimate-note small {
+            color: #ffc107;
+            font-size: 0.85rem;
+        }
+
+        /* Quality Preset Selector */
+        .quality-selector {
+            margin: 30px 0;
+            padding: 25px;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .quality-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .quality-card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 20px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-align: center;
+            position: relative;
+        }
+
+        .quality-card:hover {
+            transform: translateY(-3px);
+            background: rgba(255, 255, 255, 0.08);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        .quality-card.selected {
+            border-color: var(--preset-color, #667eea);
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+            box-shadow: 0 0 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .quality-icon {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            display: block;
+        }
+
+        .quality-name {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #fff;
+            margin-bottom: 8px;
+        }
+
+        .quality-description {
+            font-size: 0.85rem;
+            color: #a8b2d1;
+            margin-bottom: 12px;
+            line-height: 1.4;
+        }
+
+        .quality-stats {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            font-size: 0.8rem;
+        }
+
+        .quality-stat {
+            display: flex;
+            justify-content: space-between;
+            color: #a8b2d1;
+        }
+
+        .quality-stat-value {
+            color: #fff;
+            font-weight: 500;
+        }
+
+        .quality-recommended {
+            position: absolute;
+            top: -10px;
+            right: -10px;
+            background: linear-gradient(135deg, #facc15 0%, #f59e0b 100%);
+            color: #1a1a2e;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            box-shadow: 0 4px 10px rgba(250, 204, 21, 0.4);
+        }
+
+        /* Credit Balance Display */
+        .credit-balance {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.2) 0%, rgba(118, 75, 162, 0.2) 100%);
+            border: 1px solid rgba(102, 126, 234, 0.3);
+            border-radius: 20px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .credit-balance:hover {
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.3) 0%, rgba(118, 75, 162, 0.3) 100%);
+            border-color: #667eea;
+            transform: translateY(-2px);
+        }
+
+        .credit-icon {
+            font-size: 1.2rem;
+        }
+
+        .credit-amount {
+            color: #fff;
+        }
+
+        .credit-label {
+            color: #a8b2d1;
+            font-size: 0.85rem;
+            font-weight: 400;
+        }
+
+        /* Billing Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(8px);
+            z-index: 9999;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .billing-modal {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            border-radius: 20px;
+            max-width: 900px;
+            width: 100%;
+            max-height: 90vh;
+            overflow-y: auto;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+            animation: slideUp 0.3s ease;
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .modal-header {
+            padding: 30px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-title {
+            font-size: 1.8rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .modal-close {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            color: #fff;
+            font-size: 1.5rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-close:hover {
+            background: rgba(248, 113, 113, 0.3);
+            transform: rotate(90deg);
+        }
+
+        .modal-body {
+            padding: 30px;
+        }
+
+        .billing-tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+            border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .billing-tab {
+            padding: 12px 20px;
+            background: none;
+            border: none;
+            color: #a8b2d1;
+            cursor: pointer;
+            font-size: 0.95rem;
+            font-family: inherit;
+            transition: all 0.3s ease;
+            border-bottom: 3px solid transparent;
+        }
+
+        .billing-tab.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+        }
+
+        .billing-tab-content {
+            display: none;
+        }
+
+        .billing-tab-content.active {
+            display: block;
+        }
+
+        /* Balance Summary */
+        .balance-summary {
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+            border: 1px solid rgba(102, 126, 234, 0.3);
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .balance-info {
+            flex: 1;
+        }
+
+        .balance-title {
+            color: #a8b2d1;
+            font-size: 0.9rem;
+            margin-bottom: 5px;
+        }
+
+        .balance-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .balance-tier {
+            display: inline-block;
+            padding: 4px 12px;
+            background: rgba(74, 222, 128, 0.2);
+            border: 1px solid rgba(74, 222, 128, 0.3);
+            border-radius: 12px;
+            color: #4ade80;
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-top: 10px;
+        }
+
+        .balance-tier.free {
+            background: rgba(168, 178, 209, 0.2);
+            border-color: rgba(168, 178, 209, 0.3);
+            color: #a8b2d1;
+        }
+
+        .balance-tier.pro {
+            background: rgba(102, 126, 234, 0.2);
+            border-color: rgba(102, 126, 234, 0.3);
+            color: #667eea;
+        }
+
+        .balance-tier.enterprise {
+            background: rgba(251, 188, 5, 0.2);
+            border-color: rgba(251, 188, 5, 0.3);
+            color: #fbbc05;
+        }
+
+        /* Credit Packages */
+        .packages-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .package-card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 25px;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            position: relative;
+        }
+
+        .package-card:hover {
+            border-color: #667eea;
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
+        }
+
+        .package-card.popular::before {
+            content: '🔥 POPULAR';
+            position: absolute;
+            top: -12px;
+            right: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 700;
+        }
+
+        .package-name {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 10px;
+        }
+
+        .package-credits {
+            font-size: 2rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 5px;
+        }
+
+        .package-price {
+            color: #a8b2d1;
+            font-size: 1.1rem;
+            margin-bottom: 15px;
+        }
+
+        .package-bonus {
+            background: rgba(74, 222, 128, 0.2);
+            border: 1px solid rgba(74, 222, 128, 0.3);
+            border-radius: 8px;
+            padding: 8px;
+            color: #4ade80;
+            font-size: 0.85rem;
+            font-weight: 600;
+            text-align: center;
+            margin-top: 10px;
+        }
+
+        /* Subscription Cards */
+        .subscription-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .subscription-card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 30px;
+            transition: all 0.3s ease;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .subscription-card.current {
+            border-color: #667eea;
+            background: rgba(102, 126, 234, 0.1);
+        }
+
+        .subscription-tier-name {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 10px;
+        }
+
+        .subscription-price {
+            font-size: 2rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 5px;
+        }
+
+        .subscription-period {
+            color: #a8b2d1;
+            font-size: 0.9rem;
+            margin-bottom: 20px;
+        }
+
+        .subscription-features {
+            list-style: none;
+            margin: 20px 0;
+            flex: 1;
+        }
+
+        .subscription-features li {
+            padding: 8px 0;
+            color: #a8b2d1;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .subscription-features li::before {
+            content: '✓';
+            color: #4ade80;
+            font-weight: 700;
+        }
+
+        .subscription-btn {
+            margin-top: auto;
+        }
+
+        /* Transaction History */
+        .transaction-list {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .transaction-item {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .transaction-info {
+            flex: 1;
+        }
+
+        .transaction-description {
+            font-size: 1rem;
+            font-weight: 600;
+            color: #fff;
+            margin-bottom: 5px;
+        }
+
+        .transaction-date {
+            color: #a8b2d1;
+            font-size: 0.85rem;
+        }
+
+        .transaction-amount {
+            font-size: 1.3rem;
+            font-weight: 700;
+        }
+
+        .transaction-amount.positive {
+            color: #4ade80;
+        }
+
+        .transaction-amount.negative {
+            color: #f87171;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #a8b2d1;
+        }
+
+        .empty-state-icon {
+            font-size: 4rem;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+
+        /* Payment Form */
+        .payment-form {
+            margin-top: 30px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-label {
+            display: block;
+            color: #a8b2d1;
+            font-size: 0.9rem;
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 12px 16px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            color: #fff;
+            font-size: 1rem;
+            font-family: inherit;
+            transition: all 0.3s ease;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: #667eea;
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        #card-element {
+            padding: 12px 16px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            transition: all 0.3s ease;
+        }
+
+        #card-element.StripeElement--focus {
+            border-color: #667eea;
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        #card-errors {
+            color: #f87171;
+            font-size: 0.9rem;
+            margin-top: 8px;
+            min-height: 20px;
+        }
+
+        .payment-btn {
+            width: 100%;
+            margin-top: 20px;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .packages-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .subscription-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .balance-summary {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 15px;
+            }
+        }
+
+        /* Pulse animation for credit balance */
+        @keyframes pulse {
+            0%, 100% {
+                transform: scale(1);
+                box-shadow: 0 0 0 rgba(102, 126, 234, 0.7);
+            }
+            50% {
+                transform: scale(1.05);
+                box-shadow: 0 0 20px rgba(102, 126, 234, 0.7);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div class="header">
+            <h1>Splat App</h1>
+            <p>3D Gaussian Splatting Reconstruction</p>
+
+            <!-- User Profile Section -->
+            <div class="user-section" id="user-section">
+                <!-- Logged out state -->
+                <div id="auth-buttons" class="auth-buttons" style="display: none;">
+                    <button class="auth-btn google-btn" id="google-login">
+                        <svg width="18" height="18" viewBox="0 0 18 18" style="margin-right: 8px;">
+                            <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"/>
+                            <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332C2.438 15.983 5.482 18 9 18z"/>
+                            <path fill="#FBBC05" d="M3.964 10.71c-.18-.54-.282-1.117-.282-1.71s.102-1.17.282-1.71V4.958H.957C.347 6.173 0 7.548 0 9s.348 2.827.957 4.042l3.007-2.332z"/>
+                            <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"/>
+                        </svg>
+                        Sign in with Google
+                    </button>
+                    <button class="auth-btn github-btn" id="github-login">
+                        <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor" style="margin-right: 8px;">
+                            <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+                        </svg>
+                        Sign in with GitHub
+                    </button>
+                </div>
+
+                <!-- Logged in state -->
+                <div id="user-profile" class="user-profile" style="display: none;">
+                    <img id="user-avatar" class="user-avatar" src="" alt="User avatar">
+                    <div class="user-info">
+                        <span id="user-name" class="user-name"></span>
+                        <span id="user-email" class="user-email"></span>
+                    </div>
+                    <div class="credit-balance" id="credit-balance" title="Click to manage credits">
+                        <span class="credit-icon">💎</span>
+                        <span class="credit-amount" id="credit-amount">0</span>
+                        <span class="credit-label">credits</span>
+                    </div>
+                    <button class="logout-btn" id="logout-btn">Logout</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="container">
+            <div class="tabs">
+                <button class="tab active" data-tab="capture">Capture</button>
+                <button class="tab" data-tab="upload">Upload</button>
+                <button class="tab" data-tab="viewer">Viewer</button>
+                <button class="tab" data-tab="projects">Projects</button>
+            </div>
+
+            <!-- Capture Tab -->
+            <div id="capture" class="tab-content active">
+                <div class="upload-section">
+                    <h2>Capture Photos for 3D Reconstruction</h2>
+                    <p style="color: #a8b2d1; margin: 20px 0;">Take 20-30 photos from different angles around your object</p>
+
+                    <div class="camera-preview" id="camera-preview" style="display: none;">
+                        <video id="camera-stream" autoplay playsinline></video>
+                    </div>
+
+                    <button class="btn" id="start-camera">Start Camera</button>
+                    <button class="btn" id="capture-photo" style="display: none;">Capture Photo</button>
+                    <button class="btn" id="stop-camera" style="display: none;">Stop Camera</button>
+
+                    <div class="capture-count">
+                        <span id="photo-count">0</span> photos captured
+                    </div>
+
+                    <div class="thumbnail-grid" id="thumbnail-grid"></div>
+
+                    <!-- Quality Preset Selector for Capture -->
+                    <div id="quality-selector-capture" class="quality-selector" style="display: none;">
+                        <h3 style="color: #667eea; margin-bottom: 15px; text-align: center;">Select Quality</h3>
+                        <div class="quality-grid" id="quality-grid-capture">
+                            <!-- Quality presets will be loaded here -->
+                        </div>
+                    </div>
+
+                    <!-- Project Metadata for Capture -->
+                    <div id="project-metadata-capture" style="display: none; margin: 20px 0;">
+                        <input type="text" id="project-name-capture" class="project-name-input" placeholder="Project name (optional)">
+                        <div class="tags-input-container">
+                            <input type="text" id="project-tags-capture" class="tags-input" placeholder="Tags (comma-separated, e.g., car, outdoor, demo)">
+                            <small style="color: #a8b2d1; font-size: 0.85rem; margin-top: 5px; display: block;">
+                                Tags help organize and find your projects later
+                            </small>
+                        </div>
+                    </div>
+
+                    <!-- Advanced Settings for Capture -->
+                    <div id="advanced-settings-capture" style="display: none; margin: 20px 0;">
+                        <details class="advanced-settings-panel">
+                            <summary class="advanced-settings-header">Advanced Settings</summary>
+                            <div class="advanced-settings-content" id="advanced-params-capture"></div>
+                        </details>
+                    </div>
+
+                    <button class="btn" id="process-captures" style="display: none;">Process Reconstruction</button>
+                </div>
+            </div>
+
+            <!-- Upload Tab -->
+            <div id="upload" class="tab-content">
+                <div class="upload-section">
+                    <h2>Upload Photos</h2>
+                    <p style="color: #a8b2d1; margin: 20px 0;">Upload 20-30 photos of your object from different angles</p>
+
+                    <div class="upload-zone" id="upload-zone">
+                        <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="currentColor" style="margin: 0 auto; display: block; color: #667eea;">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                        </svg>
+                        <p style="margin-top: 20px; font-size: 1.1rem;">Click to upload or drag and drop</p>
+                        <p style="color: #a8b2d1; margin-top: 10px;">PNG, JPG up to 10MB each</p>
+                    </div>
+
+                    <input type="file" id="file-input" accept="image/*" multiple style="display: none;">
+
+                    <div class="file-list" id="file-list"></div>
+
+                    <!-- Quality Preset Selector -->
+                    <div id="quality-selector" class="quality-selector" style="display: none;">
+                        <h3 style="color: #667eea; margin-bottom: 15px; text-align: center;">Select Quality</h3>
+                        <div class="quality-grid" id="quality-grid">
+                            <!-- Quality presets will be loaded here -->
+                        </div>
+                    </div>
+
+                    <!-- Project Metadata for Upload -->
+                    <div id="project-metadata-upload" style="display: none; margin: 20px 0;">
+                        <input type="text" id="project-name-upload" class="project-name-input" placeholder="Project name (optional)">
+                        <div class="tags-input-container">
+                            <input type="text" id="project-tags-upload" class="tags-input" placeholder="Tags (comma-separated, e.g., car, outdoor, demo)">
+                            <small style="color: #a8b2d1; font-size: 0.85rem; margin-top: 5px; display: block;">
+                                Tags help organize and find your projects later
+                            </small>
+                        </div>
+                    </div>
+
+                    <!-- Advanced Settings for Upload -->
+                    <div id="advanced-settings-upload" style="display: none; margin: 20px 0;">
+                        <details class="advanced-settings-panel">
+                            <summary class="advanced-settings-header">Advanced Settings</summary>
+                            <div class="advanced-settings-content" id="advanced-params-upload"></div>
+                        </details>
+                    </div>
+
+                    <button class="btn" id="upload-btn" style="display: none;">Upload & Process</button>
+
+                    <div id="upload-progress" style="display: none;">
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="progress-fill"></div>
+                        </div>
+                        <p style="text-align: center; margin-top: 10px; color: #a8b2d1;" id="progress-text">0%</p>
+                    </div>
+
+                    <div id="status-message"></div>
+                </div>
+            </div>
+
+            <!-- Viewer Tab -->
+            <div id="viewer" class="tab-content">
+                <div class="upload-section">
+                    <h2>3D Viewer</h2>
+                    <div id="viewer-container">
+                        <div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #a8b2d1;">
+                            <p>No model loaded. Process some photos first!</p>
+                        </div>
+                    </div>
+
+                    <!-- Viewer Controls -->
+                    <div class="viewer-controls" id="viewer-controls" style="display: none;">
+                        <button class="viewer-btn viewer-btn-primary" id="download-model-btn">
+                            <span>⬇️</span>
+                            Download Model
+                        </button>
+                        <button class="viewer-btn" id="share-model-btn">
+                            <span>🔗</span>
+                            Share
+                        </button>
+                        <button class="viewer-btn" id="embed-code-btn">
+                            <span>📋</span>
+                            Embed Code
+                        </button>
+                        <button class="viewer-btn" id="screenshot-btn">
+                            <span>📸</span>
+                            Screenshot
+                        </button>
+                        <button class="viewer-btn" id="fullscreen-btn">
+                            <span>⛶</span>
+                            Fullscreen
+                        </button>
+                        <button class="viewer-btn" id="model-info-btn">
+                            <span>ℹ️</span>
+                            Info
+                        </button>
+                    </div>
+
+                    <!-- Model Info -->
+                    <div class="viewer-info" id="viewer-info">
+                        <h3 style="margin-bottom: 15px; color: #fff;">Model Information</h3>
+                        <div class="info-grid">
+                            <div class="info-item">
+                                <span class="info-label">Quality Preset</span>
+                                <span class="info-value" id="info-quality">-</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">Photo Count</span>
+                                <span class="info-value" id="info-photos">-</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">Processing Time</span>
+                                <span class="info-value" id="info-time">-</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">Credits Used</span>
+                                <span class="info-value" id="info-credits">-</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">File Size</span>
+                                <span class="info-value" id="info-size">-</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">Created</span>
+                                <span class="info-value" id="info-date">-</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 20px; text-align: center; color: #a8b2d1;">
+                        <p>Use mouse to rotate, scroll to zoom</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Projects Tab -->
+            <div id="projects" class="tab-content">
+                <div class="upload-section">
+                    <h2>My Projects</h2>
+
+                    <!-- Project Controls -->
+                    <div class="project-controls">
+                        <div class="search-bar">
+                            <input type="text" id="project-search" placeholder="🔍 Search projects..." />
+                        </div>
+                        <div class="filter-controls">
+                            <select id="status-filter" class="filter-select">
+                                <option value="all">All Status</option>
+                                <option value="completed">Completed</option>
+                                <option value="processing">Processing</option>
+                                <option value="failed">Failed</option>
+                            </select>
+                            <select id="sort-order" class="filter-select">
+                                <option value="newest">Newest First</option>
+                                <option value="oldest">Oldest First</option>
+                                <option value="name">Name (A-Z)</option>
+                            </select>
+                            <button id="toggle-select-mode" class="filter-select" style="background: rgba(255, 255, 255, 0.05); padding: 8px 16px; cursor: pointer;">
+                                Select Multiple
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Bulk Actions Bar (hidden by default) -->
+                    <div id="bulk-actions-bar" style="display: none; margin: 15px 0; padding: 15px; background: rgba(255, 255, 255, 0.05); border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.1);">
+                        <div style="display: flex; align-items: center; justify-content: space-between;">
+                            <span id="selected-count" style="color: #a8b2d1;">0 projects selected</span>
+                            <div style="display: flex; gap: 10px;">
+                                <button id="bulk-delete-btn" style="padding: 8px 16px; background: rgba(248, 113, 113, 0.2); border: 1px solid #f87171; color: #f87171; border-radius: 8px; cursor: pointer;">
+                                    Delete Selected
+                                </button>
+                                <button id="cancel-select-mode" style="padding: 8px 16px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.2); color: #fff; border-radius: 8px; cursor: pointer;">
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tags Filter -->
+                    <div class="tags-filter" id="tags-filter">
+                        <span style="color: #a8b2d1; font-size: 0.9rem; margin-right: 10px;">Filter by tag:</span>
+                        <div class="tags-list" id="filter-tags-list">
+                            <!-- Tags will be dynamically added -->
+                        </div>
+                    </div>
+
+                    <div class="projects-grid" id="projects-grid">
+                        <!-- Projects will be dynamically loaded -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Billing Modal -->
+    <div class="modal-overlay" id="billing-modal">
+        <div class="billing-modal">
+            <div class="modal-header">
+                <h2 class="modal-title">Credits & Billing</h2>
+                <button class="modal-close" id="close-billing-modal">×</button>
+            </div>
+            <div class="modal-body">
+                <!-- Balance Summary -->
+                <div class="balance-summary">
+                    <div class="balance-info">
+                        <div class="balance-title">Current Balance</div>
+                        <div class="balance-value" id="modal-credit-balance">0</div>
+                        <span class="balance-tier" id="user-tier">Free Tier</span>
+                    </div>
+                </div>
+
+                <!-- Billing Tabs -->
+                <div class="billing-tabs">
+                    <button class="billing-tab active" data-billing-tab="buy-credits">Buy Credits</button>
+                    <button class="billing-tab" data-billing-tab="subscriptions">Subscriptions</button>
+                    <button class="billing-tab" data-billing-tab="history">Transaction History</button>
+                </div>
+
+                <!-- Buy Credits Tab -->
+                <div class="billing-tab-content active" id="buy-credits">
+                    <h3 style="margin-bottom: 15px; color: #fff;">One-Time Credit Packages</h3>
+                    <div class="packages-grid" id="packages-grid">
+                        <!-- Credit packages will be loaded dynamically -->
+                    </div>
+                </div>
+
+                <!-- Subscriptions Tab -->
+                <div class="billing-tab-content" id="subscriptions">
+                    <h3 style="margin-bottom: 15px; color: #fff;">Subscription Plans</h3>
+                    <div class="subscription-grid">
+                        <!-- Free Tier -->
+                        <div class="subscription-card">
+                            <div class="subscription-tier-name">Free</div>
+                            <div class="subscription-price">$0</div>
+                            <div class="subscription-period">per month</div>
+                            <ul class="subscription-features">
+                                <li>500 monthly credits</li>
+                                <li>5 projects per month</li>
+                                <li>Preview quality only</li>
+                                <li>Community support</li>
+                                <li>Public projects only</li>
+                            </ul>
+                            <button class="btn subscription-btn" disabled>Current Plan</button>
+                        </div>
+
+                        <!-- Pro Tier -->
+                        <div class="subscription-card">
+                            <div class="subscription-tier-name">Pro</div>
+                            <div class="subscription-price">$19.99</div>
+                            <div class="subscription-period">per month</div>
+                            <ul class="subscription-features">
+                                <li>2,500 monthly credits</li>
+                                <li>Unlimited projects</li>
+                                <li>All quality levels</li>
+                                <li>Priority processing</li>
+                                <li>Email support</li>
+                                <li>Private projects</li>
+                                <li>Advanced parameters</li>
+                                <li>API access</li>
+                            </ul>
+                            <button class="btn subscription-btn" id="subscribe-pro">Upgrade to Pro</button>
+                        </div>
+
+                        <!-- Enterprise Tier -->
+                        <div class="subscription-card">
+                            <div class="subscription-tier-name">Enterprise</div>
+                            <div class="subscription-price">$49.99</div>
+                            <div class="subscription-period">per month</div>
+                            <ul class="subscription-features">
+                                <li>10,000 monthly credits</li>
+                                <li>Everything in Pro</li>
+                                <li>Dedicated GPU</li>
+                                <li>Custom training parameters</li>
+                                <li>White-label option</li>
+                                <li>SLA guarantee</li>
+                                <li>Phone support</li>
+                                <li>Bulk processing</li>
+                                <li>Team collaboration</li>
+                            </ul>
+                            <button class="btn subscription-btn" id="subscribe-enterprise">Upgrade to Enterprise</button>
+                        </div>
+                    </div>
+
+                    <div id="cancel-subscription-container" style="margin-top: 30px; display: none;">
+                        <button class="btn" id="cancel-subscription" style="background: linear-gradient(135deg, #f87171 0%, #dc2626 100%);">
+                            Cancel Subscription
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Transaction History Tab -->
+                <div class="billing-tab-content" id="history">
+                    <h3 style="margin-bottom: 15px; color: #fff;">Transaction History</h3>
+                    <div class="transaction-list" id="transaction-list">
+                        <!-- Transactions will be loaded dynamically -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Payment Processing Modal -->
+    <div class="modal-overlay" id="payment-modal">
+        <div class="billing-modal" style="max-width: 500px;">
+            <div class="modal-header">
+                <h2 class="modal-title">Complete Payment</h2>
+                <button class="modal-close" id="close-payment-modal">×</button>
+            </div>
+            <div class="modal-body">
+                <div id="payment-summary" style="margin-bottom: 20px;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                        <span style="color: #a8b2d1;">Package:</span>
+                        <span id="payment-package-name" style="color: #fff; font-weight: 600;"></span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                        <span style="color: #a8b2d1;">Credits:</span>
+                        <span id="payment-credits" style="color: #667eea; font-weight: 600;"></span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.1);">
+                        <span style="color: #a8b2d1; font-size: 1.1rem;">Total:</span>
+                        <span id="payment-amount" style="color: #fff; font-weight: 700; font-size: 1.3rem;"></span>
+                    </div>
+                </div>
+
+                <form id="payment-form" class="payment-form">
+                    <div class="form-group">
+                        <label class="form-label">Card Information</label>
+                        <div id="card-element"></div>
+                        <div id="card-errors"></div>
+                    </div>
+
+                    <button type="submit" class="btn payment-btn" id="submit-payment">
+                        <span id="payment-button-text">Pay Now</span>
+                        <span id="payment-spinner" style="display: none;">Processing...</span>
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Share Modal -->
+    <div class="modal-overlay" id="share-modal">
+        <div class="billing-modal" style="max-width: 600px;">
+            <div class="modal-header">
+                <h2 class="modal-title">Share Model</h2>
+                <button class="modal-close" id="close-share-modal">×</button>
+            </div>
+            <div class="modal-body">
+                <h3 style="margin-bottom: 15px; color: #fff;">Public Link</h3>
+                <div class="share-link-container">
+                    <input type="text" class="share-link-input" id="share-link" readonly>
+                    <button class="copy-btn" id="copy-share-link">Copy</button>
+                </div>
+
+                <h3 style="margin: 25px 0 15px; color: #fff;">Embed Code</h3>
+                <div class="embed-code" id="embed-code-display"></div>
+                <button class="copy-btn" id="copy-embed-code" style="margin-top: 10px;">Copy Embed Code</button>
+
+                <h3 style="margin: 25px 0 15px; color: #fff;">Share on Social Media</h3>
+                <div class="social-share">
+                    <button class="social-btn twitter" id="share-twitter">
+                        <span>𝕏</span>
+                        Twitter
+                    </button>
+                    <button class="social-btn facebook" id="share-facebook">
+                        <span>f</span>
+                        Facebook
+                    </button>
+                    <button class="social-btn linkedin" id="share-linkedin">
+                        <span>in</span>
+                        LinkedIn
+                    </button>
+                    <button class="social-btn reddit" id="share-reddit">
+                        <span>▶</span>
+                        Reddit
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stripe.js -->
+    <script src="https://js.stripe.com/v3/"></script>
+
+    <script type="module" src="/src/main.js"></script>
+</body>
+</html>
