@@ -2,15 +2,39 @@
 
 A Progressive Web App for creating 3D reconstructions from photos using Gaussian Splatting, powered by Cloudflare and GPU cloud processing.
 
-## Features
+## 🚀 Quick Start
 
-- 📸 **Photo Capture**: Use your device camera to capture 20-30 photos from different angles
-- 📤 **Upload**: Or upload existing photos from your device
-- ☁️ **Cloud Processing**: Automatic GPU-based 3D reconstruction using Gaussian Splatting
-- 👁️ **3D Viewer**: View and interact with your 3D models directly in the browser
+**New to the project?** Start here:
+
+- **[QUICK-START.md](./QUICK-START.md)** - Get running in 5 minutes
+- **[DEPLOYMENT.md](./DEPLOYMENT.md)** - Complete deployment guide (test + production)
+
+```bash
+# Automated setup (recommended)
+./setup-dev.sh
+
+# Or manual setup - see QUICK-START.md
+```
+
+## ✨ Features
+
+### Core Features
+- 📸 **Photo Capture**: Use device camera or upload 20-100 photos
+- ⚙️ **Quality Presets**: Preview, Standard, High, Ultra quality levels
+- ☁️ **Cloud Processing**: GPU-based 3D reconstruction via RunPod
+- 👁️ **3D Viewer**: Interactive browser-based model viewer
+- 📥 **Download & Share**: Download PLY models, share via public links, embed on websites
 - 📱 **Progressive Web App**: Install on any device, works offline
-- 💾 **Local Storage**: Projects saved locally using IndexedDB
-- 🔒 **Privacy-focused**: Your photos stay in your control
+
+### Advanced Features
+- 🔐 **OAuth Login**: Google & GitHub authentication
+- 💳 **Stripe Billing**: Credit-based pricing with subscriptions
+- 🔔 **Push Notifications**: Get notified when models are ready
+- 🎨 **Custom Parameters**: Advanced Gaussian Splatting controls
+- 📊 **Project Management**: Organize, filter, and bulk delete projects
+- 💰 **Credit System**: Free tier (100 credits), Pro, and Enterprise plans
+- 🔄 **Auto-Refund**: Automatic credit refunds on job failures
+- 🚫 **Job Cancellation**: Cancel running jobs and get credits back
 
 ## Architecture
 
