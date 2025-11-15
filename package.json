@@ -1,0 +1,35 @@
+{
+  "name": "splat-app",
+  "version": "1.0.0",
+  "description": "Progressive Web App for 3D Gaussian Splatting reconstruction",
+  "main": "index.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "worker:dev": "wrangler dev worker/src/index.ts",
+    "worker:deploy": "wrangler deploy worker/src/index.ts"
+  },
+  "keywords": [
+    "gaussian-splatting",
+    "3d-reconstruction",
+    "pwa",
+    "cloudflare",
+    "webgl"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "three": "^0.160.0",
+    "@google/model-viewer": "^3.4.0",
+    "idb": "^8.0.0"
+  },
+  "devDependencies": {
+    "vite": "^5.0.11",
+    "vite-plugin-pwa": "^0.17.5",
+    "workbox-window": "^7.0.0",
+    "wrangler": "^3.22.1",
+    "@cloudflare/workers-types": "^4.20231218.0",
+    "typescript": "^5.3.3"
+  }
+}

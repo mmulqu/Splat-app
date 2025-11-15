@@ -1,0 +1,36 @@
+name = "splat-app-worker"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+# R2 bucket for storing photos and models
+[[r2_buckets]]
+binding = "SPLAT_BUCKET"
+bucket_name = "splat-app-storage"
+preview_bucket_name = "splat-app-storage-preview"
+
+# D1 database for metadata
+[[d1_databases]]
+binding = "SPLAT_DB"
+database_name = "splat-app-db"
+database_id = "your-database-id-here"
+
+# Queue for processing jobs
+[[queues.producers]]
+binding = "PROCESSING_QUEUE"
+queue = "splat-processing-queue"
+
+[[queues.consumers]]
+queue = "splat-processing-queue"
+max_batch_size = 10
+max_batch_timeout = 30
+
+# Environment variables (set via `wrangler secret put`)
+# REPLICATE_API_KEY
+# MODAL_API_KEY
+# RUNPOD_API_KEY
+
+[build]
+command = "npm install && npm run build"
+
+[env.production]
+name = "splat-app-worker-production"
