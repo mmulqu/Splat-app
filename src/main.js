@@ -18,6 +18,9 @@ let currentSortOrder = 'newest';
 let currentTagFilter = null;
 let allProjects = [];
 
+// Current user
+let currentUser = null;
+
 async function initDB() {
     db = await openDB('SplatAppDB', 2, {
         upgrade(db, oldVersion) {
@@ -1111,13 +1114,129 @@ function urlBase64ToUint8Array(base64String) {
     return outputArray;
 }
 
+// Authentication functions
+async function checkAuth() {
+    try {
+        const response = await fetch(`${API_ENDPOINT}/auth/me`, {
+            credentials: 'include',
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            currentUser = data.user;
+            updateAuthUI();
+        } else {
+            currentUser = null;
+            updateAuthUI();
+        }
+    } catch (error) {
+        console.error('Auth check error:', error);
+        currentUser = null;
+        updateAuthUI();
+    }
+}
+
+function updateAuthUI() {
+    const authButtons = document.getElementById('auth-buttons');
+    const userProfile = document.getElementById('user-profile');
+
+    if (currentUser) {
+        // Show user profile
+        authButtons.style.display = 'none';
+        userProfile.style.display = 'flex';
+
+        document.getElementById('user-avatar').src = currentUser.avatar_url;
+        document.getElementById('user-name').textContent = currentUser.name;
+        document.getElementById('user-email').textContent = currentUser.email;
+    } else {
+        // Show login buttons
+        authButtons.style.display = 'flex';
+        userProfile.style.display = 'none';
+    }
+}
+
+async function handleGoogleLogin() {
+    try {
+        const response = await fetch(`${API_ENDPOINT}/auth/google`, {
+            credentials: 'include',
+        });
+        const data = await response.json();
+
+        if (data.authUrl) {
+            // Store state for CSRF protection
+            sessionStorage.setItem('oauth_state', data.state);
+            // Redirect to Google OAuth
+            window.location.href = data.authUrl;
+        }
+    } catch (error) {
+        console.error('Google login error:', error);
+        showStatus('Failed to initiate Google login', 'error');
+    }
+}
+
+async function handleGitHubLogin() {
+    try {
+        const response = await fetch(`${API_ENDPOINT}/auth/github`, {
+            credentials: 'include',
+        });
+        const data = await response.json();
+
+        if (data.authUrl) {
+            // Store state for CSRF protection
+            sessionStorage.setItem('oauth_state', data.state);
+            // Redirect to GitHub OAuth
+            window.location.href = data.authUrl;
+        }
+    } catch (error) {
+        console.error('GitHub login error:', error);
+        showStatus('Failed to initiate GitHub login', 'error');
+    }
+}
+
+async function handleLogout() {
+    try {
+        await fetch(`${API_ENDPOINT}/auth/logout`, {
+            method: 'POST',
+            credentials: 'include',
+        });
+
+        currentUser = null;
+        updateAuthUI();
+        showStatus('Logged out successfully', 'success');
+    } catch (error) {
+        console.error('Logout error:', error);
+        showStatus('Logout failed', 'error');
+    }
+}
+
+function setupAuth() {
+    document.getElementById('google-login').addEventListener('click', handleGoogleLogin);
+    document.getElementById('github-login').addEventListener('click', handleGitHubLogin);
+    document.getElementById('logout-btn').addEventListener('click', handleLogout);
+
+    // Check for auth success/error in URL
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('auth') === 'success') {
+        showStatus('Successfully logged in!', 'success');
+        // Clean URL
+        window.history.replaceState({}, document.title, window.location.pathname);
+        // Reload auth status
+        checkAuth();
+    } else if (params.get('error') === 'auth_failed') {
+        showStatus('Authentication failed. Please try again.', 'error');
+        window.history.replaceState({}, document.title, window.location.pathname);
+    }
+}
+
 // Initialize app
 async function init() {
     await initDB();
     await loadQualityPresets();
+    await checkAuth(); // Check authentication status
     setupTabs();
     setupFileUpload();
     setupProjectFilters();
+    setupAuth();
 
     // Camera controls
     document.getElementById('start-camera').addEventListener('click', startCamera);

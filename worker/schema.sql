@@ -1,21 +1,54 @@
 -- D1 Database Schema for Splat App
 
+-- Users table
+CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    email TEXT NOT NULL UNIQUE,
+    name TEXT,
+    avatar_url TEXT,
+    provider TEXT NOT NULL CHECK(provider IN ('google', 'github')),
+    provider_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    last_login INTEGER NOT NULL,
+    UNIQUE(provider, provider_id)
+);
+
+CREATE INDEX idx_users_email ON users(email);
+CREATE INDEX idx_users_provider ON users(provider, provider_id);
+
+-- Sessions table
+CREATE TABLE IF NOT EXISTS sessions (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_sessions_user_id ON sessions(user_id);
+CREATE INDEX idx_sessions_expires_at ON sessions(expires_at);
+
 -- Projects table
 CREATE TABLE IF NOT EXISTS projects (
     id TEXT PRIMARY KEY,
+    user_id TEXT,
     name TEXT,
     status TEXT NOT NULL CHECK(status IN ('uploading', 'uploaded', 'processing', 'completed', 'failed')),
     photo_count INTEGER NOT NULL DEFAULT 0,
     tags TEXT,
+    is_public INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL,
     completed_at INTEGER,
     model_url TEXT,
-    error TEXT
+    error TEXT,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
 );
 
 CREATE INDEX idx_projects_status ON projects(status);
 CREATE INDEX idx_projects_created_at ON projects(created_at DESC);
 CREATE INDEX idx_projects_name ON projects(name);
+CREATE INDEX idx_projects_user_id ON projects(user_id);
+CREATE INDEX idx_projects_public ON projects(is_public);
 
 -- Photos table
 CREATE TABLE IF NOT EXISTS photos (

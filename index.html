@@ -32,6 +32,7 @@
         .header {
             text-align: center;
             padding: 40px 20px;
+            position: relative;
         }
 
         .header h1 {
@@ -46,6 +47,99 @@
         .header p {
             color: #a8b2d1;
             font-size: 1.1rem;
+        }
+
+        .user-section {
+            display: flex;
+            justify-content: center;
+            margin-top: 20px;
+        }
+
+        .auth-buttons {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .auth-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 12px 24px;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            color: #fff;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-family: inherit;
+        }
+
+        .auth-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: #667eea;
+            transform: translateY(-2px);
+        }
+
+        .google-btn:hover {
+            border-color: #4285F4;
+        }
+
+        .github-btn:hover {
+            border-color: #fff;
+        }
+
+        .user-profile {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            padding: 12px 20px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-radius: 50px;
+        }
+
+        .user-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            border: 2px solid #667eea;
+        }
+
+        .user-info {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+        }
+
+        .user-name {
+            font-weight: 600;
+            color: #fff;
+            font-size: 0.95rem;
+        }
+
+        .user-email {
+            font-size: 0.85rem;
+            color: #a8b2d1;
+        }
+
+        .logout-btn {
+            padding: 8px 16px;
+            background: rgba(248, 113, 113, 0.2);
+            border: 1px solid rgba(248, 113, 113, 0.4);
+            border-radius: 8px;
+            color: #f87171;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.3s ease;
+            font-family: inherit;
+        }
+
+        .logout-btn:hover {
+            background: rgba(248, 113, 113, 0.3);
+            border-color: #f87171;
         }
 
         .container {
@@ -751,6 +845,38 @@
         <div class="header">
             <h1>Splat App</h1>
             <p>3D Gaussian Splatting Reconstruction</p>
+
+            <!-- User Profile Section -->
+            <div class="user-section" id="user-section">
+                <!-- Logged out state -->
+                <div id="auth-buttons" class="auth-buttons" style="display: none;">
+                    <button class="auth-btn google-btn" id="google-login">
+                        <svg width="18" height="18" viewBox="0 0 18 18" style="margin-right: 8px;">
+                            <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"/>
+                            <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332C2.438 15.983 5.482 18 9 18z"/>
+                            <path fill="#FBBC05" d="M3.964 10.71c-.18-.54-.282-1.117-.282-1.71s.102-1.17.282-1.71V4.958H.957C.347 6.173 0 7.548 0 9s.348 2.827.957 4.042l3.007-2.332z"/>
+                            <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"/>
+                        </svg>
+                        Sign in with Google
+                    </button>
+                    <button class="auth-btn github-btn" id="github-login">
+                        <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor" style="margin-right: 8px;">
+                            <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+                        </svg>
+                        Sign in with GitHub
+                    </button>
+                </div>
+
+                <!-- Logged in state -->
+                <div id="user-profile" class="user-profile" style="display: none;">
+                    <img id="user-avatar" class="user-avatar" src="" alt="User avatar">
+                    <div class="user-info">
+                        <span id="user-name" class="user-name"></span>
+                        <span id="user-email" class="user-email"></span>
+                    </div>
+                    <button class="logout-btn" id="logout-btn">Logout</button>
+                </div>
+            </div>
         </div>
 
         <div class="container">

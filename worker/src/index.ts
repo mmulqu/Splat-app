@@ -4,6 +4,7 @@
  */
 
 import { getQualityPreset, calculatePresetCost, getAllQualityPresets } from './quality-presets';
+import * as Auth from './auth';
 
 interface Env {
     SPLAT_BUCKET: R2Bucket;
@@ -14,6 +15,13 @@ interface Env {
     MODAL_API_KEY?: string;
     RUNPOD_API_KEY?: string;
     RUNPOD_ENDPOINT_ID?: string;
+    // OAuth credentials
+    GOOGLE_CLIENT_ID?: string;
+    GOOGLE_CLIENT_SECRET?: string;
+    GITHUB_CLIENT_ID?: string;
+    GITHUB_CLIENT_SECRET?: string;
+    // Base URL for redirects
+    BASE_URL?: string;
 }
 
 interface UploadResponse {
@@ -82,9 +90,10 @@ export default {
 
         // CORS headers
         const corsHeaders = {
-            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Origin': request.headers.get('Origin') || '*',
             'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
             'Access-Control-Allow-Headers': 'Content-Type',
+            'Access-Control-Allow-Credentials': 'true',
         };
 
         // Handle CORS preflight
@@ -143,6 +152,31 @@ export default {
 
             if (path === '/api/push/unsubscribe' && request.method === 'POST') {
                 return await handlePushUnsubscribe(request, env, corsHeaders);
+            }
+
+            // Authentication endpoints
+            if (path === '/api/auth/google' && request.method === 'GET') {
+                return await handleGoogleAuth(env, corsHeaders);
+            }
+
+            if (path === '/api/auth/google/callback' && request.method === 'GET') {
+                return await handleGoogleCallback(request, env);
+            }
+
+            if (path === '/api/auth/github' && request.method === 'GET') {
+                return await handleGitHubAuth(env, corsHeaders);
+            }
+
+            if (path === '/api/auth/github/callback' && request.method === 'GET') {
+                return await handleGitHubCallback(request, env);
+            }
+
+            if (path === '/api/auth/me' && request.method === 'GET') {
+                return await handleGetCurrentUser(request, env, corsHeaders);
+            }
+
+            if (path === '/api/auth/logout' && request.method === 'POST') {
+                return await handleLogout(request, env, corsHeaders);
             }
 
             return new Response('Not Found', { status: 404, headers: corsHeaders });
@@ -655,6 +689,215 @@ function jsonResponse(data: any, status: number, corsHeaders: Record<string, str
             'Content-Type': 'application/json',
         },
     });
+}
+
+/**
+ * Handle Google OAuth initiation
+ */
+async function handleGoogleAuth(env: Env, corsHeaders: Record<string, string>): Promise<Response> {
+    if (!env.GOOGLE_CLIENT_ID) {
+        return jsonResponse({ error: 'Google OAuth not configured' }, 500, corsHeaders);
+    }
+
+    const baseUrl = env.BASE_URL || 'http://localhost:5173';
+    const redirectUri = `${baseUrl}/api/auth/google/callback`;
+    const state = Auth.generateSessionId(); // Use as CSRF token
+
+    const authUrl = Auth.getGoogleAuthUrl(env.GOOGLE_CLIENT_ID, redirectUri, state);
+
+    return jsonResponse({ authUrl, state }, 200, corsHeaders);
+}
+
+/**
+ * Handle Google OAuth callback
+ */
+async function handleGoogleCallback(request: Request, env: Env): Promise<Response> {
+    const url = new URL(request.url);
+    const code = url.searchParams.get('code');
+    const error = url.searchParams.get('error');
+
+    const baseUrl = env.BASE_URL || 'http://localhost:5173';
+
+    if (error || !code) {
+        return Response.redirect(`${baseUrl}/?error=auth_failed`, 302);
+    }
+
+    try {
+        if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET) {
+            throw new Error('Google OAuth not configured');
+        }
+
+        const redirectUri = `${baseUrl}/api/auth/google/callback`;
+
+        // Exchange code for tokens
+        const tokenData = await Auth.exchangeGoogleCode(
+            code,
+            env.GOOGLE_CLIENT_ID,
+            env.GOOGLE_CLIENT_SECRET,
+            redirectUri
+        );
+
+        // Get user info
+        const userInfo = await Auth.getGoogleUserInfo(tokenData.access_token);
+
+        // Upsert user in database
+        const user = await Auth.upsertUser(env.SPLAT_DB, {
+            provider: 'google',
+            provider_id: userInfo.id,
+            email: userInfo.email,
+            name: userInfo.name,
+            avatar_url: userInfo.picture,
+        });
+
+        // Create session
+        const session = await Auth.createSession(env.SPLAT_DB, user.id);
+
+        // Redirect to app with session cookie
+        const response = Response.redirect(`${baseUrl}/?auth=success`, 302);
+        response.headers.set(
+            'Set-Cookie',
+            `session=${session.id}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${30 * 24 * 60 * 60}`
+        );
+
+        return response;
+    } catch (error) {
+        console.error('Google OAuth error:', error);
+        return Response.redirect(`${baseUrl}/?error=auth_failed`, 302);
+    }
+}
+
+/**
+ * Handle GitHub OAuth initiation
+ */
+async function handleGitHubAuth(env: Env, corsHeaders: Record<string, string>): Promise<Response> {
+    if (!env.GITHUB_CLIENT_ID) {
+        return jsonResponse({ error: 'GitHub OAuth not configured' }, 500, corsHeaders);
+    }
+
+    const baseUrl = env.BASE_URL || 'http://localhost:5173';
+    const redirectUri = `${baseUrl}/api/auth/github/callback`;
+    const state = Auth.generateSessionId(); // Use as CSRF token
+
+    const authUrl = Auth.getGitHubAuthUrl(env.GITHUB_CLIENT_ID, redirectUri, state);
+
+    return jsonResponse({ authUrl, state }, 200, corsHeaders);
+}
+
+/**
+ * Handle GitHub OAuth callback
+ */
+async function handleGitHubCallback(request: Request, env: Env): Promise<Response> {
+    const url = new URL(request.url);
+    const code = url.searchParams.get('code');
+    const error = url.searchParams.get('error');
+
+    const baseUrl = env.BASE_URL || 'http://localhost:5173';
+
+    if (error || !code) {
+        return Response.redirect(`${baseUrl}/?error=auth_failed`, 302);
+    }
+
+    try {
+        if (!env.GITHUB_CLIENT_ID || !env.GITHUB_CLIENT_SECRET) {
+            throw new Error('GitHub OAuth not configured');
+        }
+
+        // Exchange code for token
+        const tokenData = await Auth.exchangeGitHubCode(
+            code,
+            env.GITHUB_CLIENT_ID,
+            env.GITHUB_CLIENT_SECRET
+        );
+
+        // Get user info
+        const userInfo = await Auth.getGitHubUserInfo(tokenData.access_token);
+
+        // Upsert user in database
+        const user = await Auth.upsertUser(env.SPLAT_DB, {
+            provider: 'github',
+            provider_id: userInfo.id.toString(),
+            email: userInfo.email,
+            name: userInfo.name || userInfo.login,
+            avatar_url: userInfo.avatar_url,
+        });
+
+        // Create session
+        const session = await Auth.createSession(env.SPLAT_DB, user.id);
+
+        // Redirect to app with session cookie
+        const response = Response.redirect(`${baseUrl}/?auth=success`, 302);
+        response.headers.set(
+            'Set-Cookie',
+            `session=${session.id}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${30 * 24 * 60 * 60}`
+        );
+
+        return response;
+    } catch (error) {
+        console.error('GitHub OAuth error:', error);
+        return Response.redirect(`${baseUrl}/?error=auth_failed`, 302);
+    }
+}
+
+/**
+ * Get current user from session
+ */
+async function handleGetCurrentUser(request: Request, env: Env, corsHeaders: Record<string, string>): Promise<Response> {
+    const sessionId = getSessionFromRequest(request);
+
+    if (!sessionId) {
+        return jsonResponse({ user: null }, 200, corsHeaders);
+    }
+
+    try {
+        const user = await Auth.getUserBySession(env.SPLAT_DB, sessionId);
+
+        if (!user) {
+            return jsonResponse({ user: null }, 200, corsHeaders);
+        }
+
+        // Don't send sensitive data
+        const { provider_id, ...safeUser } = user;
+
+        return jsonResponse({ user: safeUser }, 200, corsHeaders);
+    } catch (error) {
+        console.error('Get current user error:', error);
+        return jsonResponse({ error: 'Failed to get user' }, 500, corsHeaders);
+    }
+}
+
+/**
+ * Logout user
+ */
+async function handleLogout(request: Request, env: Env, corsHeaders: Record<string, string>): Promise<Response> {
+    const sessionId = getSessionFromRequest(request);
+
+    if (sessionId) {
+        try {
+            await Auth.deleteSession(env.SPLAT_DB, sessionId);
+        } catch (error) {
+            console.error('Logout error:', error);
+        }
+    }
+
+    const response = jsonResponse({ success: true }, 200, corsHeaders);
+    response.headers.set('Set-Cookie', 'session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0');
+
+    return response;
+}
+
+/**
+ * Extract session ID from request cookies
+ */
+function getSessionFromRequest(request: Request): string | null {
+    const cookieHeader = request.headers.get('Cookie');
+    if (!cookieHeader) return null;
+
+    const cookies = cookieHeader.split(';').map(c => c.trim());
+    const sessionCookie = cookies.find(c => c.startsWith('session='));
+
+    if (!sessionCookie) return null;
+
+    return sessionCookie.split('=')[1];
 }
 
 /**
