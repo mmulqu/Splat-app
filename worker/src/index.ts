@@ -124,6 +124,12 @@ export default {
                 return await handleStatus(jobId!, env, corsHeaders);
             }
 
+            // Cancel job endpoint
+            if (path.match(/^\/api\/jobs\/[^\/]+\/cancel$/) && request.method === 'POST') {
+                const jobId = path.split('/')[3];
+                return await handleCancelJob(jobId!, request, env, corsHeaders);
+            }
+
             // Model download endpoint
             if (path.startsWith('/api/model/') && request.method === 'GET') {
                 const modelId = path.split('/').pop();
@@ -144,6 +150,12 @@ export default {
             if (path.match(/^\/api\/projects\/[^\/]+$/) && request.method === 'PUT') {
                 const projectId = path.split('/').pop();
                 return await handleUpdateProject(projectId!, request, env, corsHeaders);
+            }
+
+            // Delete project
+            if (path.match(/^\/api\/projects\/[^\/]+$/) && request.method === 'DELETE') {
+                const projectId = path.split('/').pop();
+                return await handleDeleteProject(projectId!, request, env, corsHeaders);
             }
 
             // Get single project
@@ -501,6 +513,104 @@ async function handleStatus(jobId: string, env: Env, corsHeaders: Record<string,
 }
 
 /**
+ * Cancel a running or queued job
+ */
+async function handleCancelJob(jobId: string, request: Request, env: Env, corsHeaders: Record<string, string>): Promise<Response> {
+    try {
+        const sessionId = getSessionFromRequest(request);
+
+        if (!sessionId) {
+            return jsonResponse({ error: 'Authentication required' }, 401, corsHeaders);
+        }
+
+        const user = await Auth.getUserBySession(env.SPLAT_DB, sessionId);
+
+        if (!user) {
+            return jsonResponse({ error: 'Invalid session' }, 401, corsHeaders);
+        }
+
+        // Get job and verify ownership
+        const job = await env.SPLAT_DB.prepare(
+            'SELECT j.*, p.user_id FROM jobs j JOIN projects p ON j.project_id = p.id WHERE j.id = ?'
+        ).bind(jobId).first<any>();
+
+        if (!job) {
+            return jsonResponse({ error: 'Job not found' }, 404, corsHeaders);
+        }
+
+        if (job.user_id !== user.id) {
+            return jsonResponse({ error: 'Access denied' }, 403, corsHeaders);
+        }
+
+        // Can only cancel queued or processing jobs
+        if (job.status !== 'queued' && job.status !== 'processing') {
+            return jsonResponse({
+                error: `Cannot cancel job with status: ${job.status}`,
+                status: job.status
+            }, 400, corsHeaders);
+        }
+
+        // If job has external_id (RunPod job), try to cancel it
+        if (job.external_id) {
+            try {
+                await fetch(`https://api.runpod.ai/v2/${env.RUNPOD_ENDPOINT_ID}/cancel/${job.external_id}`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${env.RUNPOD_API_KEY}`,
+                        'Content-Type': 'application/json',
+                    },
+                });
+            } catch (error) {
+                console.error('Failed to cancel RunPod job:', error);
+                // Continue anyway to mark as failed locally
+            }
+        }
+
+        // Refund credits if they were charged
+        if (job.credits_cost > 0) {
+            await env.SPLAT_DB.prepare(
+                'UPDATE users SET credits = credits + ? WHERE id = ?'
+            ).bind(job.credits_cost, user.id).run();
+
+            // Record refund transaction
+            await env.SPLAT_DB.prepare(
+                `INSERT INTO transactions (
+                    id, user_id, type, amount, credits, description, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)`
+            ).bind(
+                crypto.randomUUID(),
+                user.id,
+                'refund',
+                0,
+                job.credits_cost,
+                `Job ${jobId} cancelled - credits refunded`,
+                Date.now()
+            ).run();
+        }
+
+        // Mark job as failed
+        await env.SPLAT_DB.prepare(
+            'UPDATE jobs SET status = ?, error = ?, completed_at = ? WHERE id = ?'
+        ).bind('failed', 'Cancelled by user', Date.now(), jobId).run();
+
+        // Update project status
+        await env.SPLAT_DB.prepare(
+            'UPDATE projects SET status = ?, error = ?, updated_at = ? WHERE id = ?'
+        ).bind('failed', 'Cancelled by user', Date.now(), job.project_id).run();
+
+        return jsonResponse({
+            success: true,
+            message: 'Job cancelled successfully',
+            creditsRefunded: job.credits_cost || 0
+        }, 200, corsHeaders);
+
+    } catch (error) {
+        console.error('Cancel job error:', error);
+        return jsonResponse({ error: 'Failed to cancel job' }, 500, corsHeaders);
+    }
+}
+
+/**
  * Download model file
  */
 async function handleModelDownload(modelId: string, env: Env, corsHeaders: Record<string, string>): Promise<Response> {
@@ -806,6 +916,80 @@ async function handleUpdateProject(projectId: string, request: Request, env: Env
     } catch (error) {
         console.error('Update project error:', error);
         return jsonResponse({ error: 'Failed to update project' }, 500, corsHeaders);
+    }
+}
+
+/**
+ * Handle delete project request
+ */
+async function handleDeleteProject(projectId: string, request: Request, env: Env, corsHeaders: Record<string, string>): Promise<Response> {
+    try {
+        const sessionId = getSessionFromRequest(request);
+
+        if (!sessionId) {
+            return jsonResponse({ error: 'Authentication required' }, 401, corsHeaders);
+        }
+
+        const user = await Auth.getUserBySession(env.SPLAT_DB, sessionId);
+
+        if (!user) {
+            return jsonResponse({ error: 'Invalid session' }, 401, corsHeaders);
+        }
+
+        const project = await env.SPLAT_DB.prepare(
+            'SELECT * FROM projects WHERE id = ?'
+        ).bind(projectId).first<any>();
+
+        if (!project) {
+            return jsonResponse({ error: 'Project not found' }, 404, corsHeaders);
+        }
+
+        // Only owner can delete
+        if (project.user_id !== user.id) {
+            return jsonResponse({ error: 'Access denied' }, 403, corsHeaders);
+        }
+
+        // Get all photos for this project to delete from R2
+        const photos = await env.SPLAT_DB.prepare(
+            'SELECT r2_key FROM photos WHERE project_id = ?'
+        ).bind(projectId).all();
+
+        // Delete all photos from R2
+        if (photos.results && photos.results.length > 0) {
+            await Promise.all(
+                photos.results.map(async (photo: any) => {
+                    try {
+                        await env.SPLAT_BUCKET.delete(photo.r2_key);
+                    } catch (error) {
+                        console.error(`Failed to delete photo ${photo.r2_key}:`, error);
+                    }
+                })
+            );
+        }
+
+        // Delete model file from R2 if it exists
+        if (project.model_url) {
+            const modelKey = `models/${projectId}.ply`;
+            try {
+                await env.SPLAT_BUCKET.delete(modelKey);
+            } catch (error) {
+                console.error(`Failed to delete model ${modelKey}:`, error);
+            }
+        }
+
+        // Delete project from database (cascade will delete photos and jobs)
+        await env.SPLAT_DB.prepare(
+            'DELETE FROM projects WHERE id = ?'
+        ).bind(projectId).run();
+
+        return jsonResponse({
+            success: true,
+            message: 'Project deleted successfully'
+        }, 200, corsHeaders);
+
+    } catch (error) {
+        console.error('Delete project error:', error);
+        return jsonResponse({ error: 'Failed to delete project' }, 500, corsHeaders);
     }
 }
 

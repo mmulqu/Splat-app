@@ -849,8 +849,16 @@ async function startProcessing(projectId) {
 
         const result = await response.json();
 
+        // Store jobId in project
+        const project = await db.get('projects', projectId);
+        if (project) {
+            project.jobId = result.jobId;
+            project.updatedAt = Date.now();
+            await db.put('projects', project);
+        }
+
         // Poll for status
-        pollProcessingStatus(result.jobId);
+        pollProcessingStatus(result.jobId, projectId);
 
     } catch (error) {
         console.error('Processing error:', error);
@@ -858,15 +866,48 @@ async function startProcessing(projectId) {
     }
 }
 
-async function pollProcessingStatus(jobId) {
+async function pollProcessingStatus(jobId, projectId) {
     const interval = setInterval(async () => {
         try {
             const response = await fetch(`${API_ENDPOINT}/status/${jobId}`);
             const status = await response.json();
 
+            // Update project in IndexedDB
+            if (projectId) {
+                const project = await db.get('projects', projectId);
+                if (project) {
+                    project.status = status.status;
+                    project.updatedAt = Date.now();
+
+                    if (status.modelUrl) {
+                        project.modelUrl = status.modelUrl;
+                        project.completedAt = Date.now();
+                    }
+
+                    if (status.error) {
+                        project.error = status.error;
+                    }
+
+                    await db.put('projects', project);
+
+                    // Reload projects list to show updated status
+                    await loadProjects();
+                }
+            }
+
             if (status.status === 'completed') {
                 clearInterval(interval);
                 showStatus('3D reconstruction complete! View it in the Viewer tab.', 'success');
+
+                // Send push notification if enabled
+                if ('Notification' in window && Notification.permission === 'granted') {
+                    new Notification('Splat Processing Complete', {
+                        body: 'Your 3D model is ready to view!',
+                        icon: '/icon-192.png',
+                        tag: `job-${jobId}`
+                    });
+                }
+
                 // Load the model in viewer
                 loadModelInViewer(status.modelUrl);
             } else if (status.status === 'failed') {
@@ -878,7 +919,7 @@ async function pollProcessingStatus(jobId) {
         } catch (error) {
             console.error('Status check error:', error);
         }
-    }, 5000);
+    }, 5000); // Poll every 5 seconds
 }
 
 function loadModelInViewer(modelUrl, metadata = {}) {
@@ -975,6 +1016,16 @@ async function loadProjects() {
                         ${isPublic ? 'Make Private' : 'Make Public'}
                     </button>
                 </div>
+                <div class="project-actions" style="margin-top: 10px; display: flex; gap: 10px;">
+                    ${project.status === 'processing' || project.status === 'queued' ? `
+                        <button class="cancel-job-btn" data-project-id="${project.id}" style="flex: 1; padding: 8px; background: rgba(248, 113, 113, 0.2); border: 1px solid #f87171; color: #f87171; border-radius: 8px; cursor: pointer; font-size: 0.85rem;">
+                            ⏹ Cancel Job
+                        </button>
+                    ` : ''}
+                    <button class="delete-project-btn" data-project-id="${project.id}" style="flex: 1; padding: 8px; background: rgba(248, 113, 113, 0.2); border: 1px solid #f87171; color: #f87171; border-radius: 8px; cursor: pointer; font-size: 0.85rem;">
+                        🗑 Delete
+                    </button>
+                </div>
             ` : ''}
             ${tags.length > 0 ? `
                 <div class="project-tags">
@@ -999,6 +1050,24 @@ async function loadProjects() {
             toggleBtn.addEventListener('click', async (e) => {
                 e.stopPropagation();
                 await toggleProjectVisibility(project.id, !isPublic);
+            });
+        }
+
+        // Add delete button handler
+        const deleteBtn = card.querySelector('.delete-project-btn');
+        if (deleteBtn) {
+            deleteBtn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                await deleteProject(project.id, projectName);
+            });
+        }
+
+        // Add cancel job button handler
+        const cancelBtn = card.querySelector('.cancel-job-btn');
+        if (cancelBtn) {
+            cancelBtn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                await cancelJob(project.id, projectName);
             });
         }
 
@@ -1600,6 +1669,142 @@ async function toggleProjectVisibility(projectId, makePublic) {
     } catch (error) {
         console.error('Error toggling visibility:', error);
         showStatus('Failed to update project visibility', 'error');
+    }
+}
+
+/**
+ * Delete a project
+ */
+async function deleteProject(projectId, projectName) {
+    if (!currentUser) {
+        showStatus('Please log in to delete projects', 'error');
+        return;
+    }
+
+    // Confirmation dialog
+    if (!confirm(`Are you sure you want to delete "${projectName}"?\n\nThis will permanently delete:\n- All uploaded photos\n- The 3D model\n- All project data\n\nThis action cannot be undone!`)) {
+        return;
+    }
+
+    try {
+        showStatus('Deleting project...', 'info');
+
+        // Delete from server
+        const response = await fetch(`${API_ENDPOINT}/projects/${projectId}`, {
+            method: 'DELETE',
+            credentials: 'include',
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to delete project');
+        }
+
+        // Delete from IndexedDB
+        await db.delete('projects', projectId);
+
+        // Delete associated photos
+        const tx = db.transaction(['photos'], 'readwrite');
+        const photoStore = tx.objectStore('photos');
+        const index = photoStore.index('projectId');
+        const photosToDelete = await index.getAllKeys(projectId);
+
+        for (const key of photosToDelete) {
+            await photoStore.delete(key);
+        }
+        await tx.done;
+
+        // Reload projects
+        await loadProjects();
+
+        showStatus('Project deleted successfully', 'success');
+
+    } catch (error) {
+        console.error('Error deleting project:', error);
+        showStatus(error.message || 'Failed to delete project', 'error');
+    }
+}
+
+/**
+ * Cancel a running or queued job
+ */
+async function cancelJob(projectId, projectName) {
+    if (!currentUser) {
+        showStatus('Please log in to cancel jobs', 'error');
+        return;
+    }
+
+    // Confirmation dialog
+    if (!confirm(`Cancel processing for "${projectName}"?\n\nAny credits used will be refunded.`)) {
+        return;
+    }
+
+    try {
+        showStatus('Cancelling job...', 'info');
+
+        // Get project to find job ID
+        const project = await db.get('projects', projectId);
+        if (!project) {
+            throw new Error('Project not found');
+        }
+
+        // Find the active job for this project
+        const jobsResponse = await fetch(`${API_ENDPOINT}/projects/${projectId}`, {
+            credentials: 'include',
+        });
+
+        if (!jobsResponse.ok) {
+            throw new Error('Failed to get project details');
+        }
+
+        const projectData = await jobsResponse.json();
+
+        // Find job ID - we'll need to store this in the project when we create it
+        // For now, we'll use a best-effort approach
+        let jobId = project.jobId; // Assuming we store this
+
+        if (!jobId) {
+            // Try to find the job through the status API - we need to enhance this
+            throw new Error('Job ID not found. Please try again.');
+        }
+
+        // Cancel the job
+        const response = await fetch(`${API_ENDPOINT}/jobs/${jobId}/cancel`, {
+            method: 'POST',
+            credentials: 'include',
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to cancel job');
+        }
+
+        const result = await response.json();
+
+        // Update local project status
+        const updatedProject = {
+            ...project,
+            status: 'failed',
+            error: 'Cancelled by user',
+            updatedAt: Date.now()
+        };
+
+        await db.put('projects', updatedProject);
+
+        // Reload projects
+        await loadProjects();
+
+        const creditsMsg = result.creditsRefunded > 0 ? ` (${result.creditsRefunded} credits refunded)` : '';
+        showStatus(`Job cancelled successfully${creditsMsg}`, 'success');
+
+        // Reload balance if credits were refunded
+        if (result.creditsRefunded > 0 && currentUser) {
+            loadBalance();
+        }
+
+    } catch (error) {
+        console.error('Error cancelling job:', error);
+        showStatus(error.message || 'Failed to cancel job', 'error');
     }
 }
 
