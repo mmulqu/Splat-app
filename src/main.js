@@ -1703,6 +1703,462 @@ function setupAuth() {
     }
 }
 
+// ===== BILLING & PAYMENTS =====
+
+let stripe = null;
+let cardElement = null;
+let currentPackage = null;
+let userBalance = { credits: 0, subscriptionTier: 'free' };
+
+/**
+ * Initialize Stripe
+ */
+async function initStripe() {
+    try {
+        // Stripe will be initialized when needed with publishable key from server
+        console.log('Stripe ready to initialize');
+    } catch (error) {
+        console.error('Stripe initialization error:', error);
+    }
+}
+
+/**
+ * Load user's credit balance
+ */
+async function loadCreditBalance() {
+    try {
+        const response = await fetch(`${API_ENDPOINT}/billing/balance`, {
+            credentials: 'include'
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            userBalance = {
+                credits: data.credits || 0,
+                creditsUsed: data.creditsUsed || 0,
+                subscriptionTier: data.subscriptionTier || 'free',
+                subscriptionStatus: data.subscriptionStatus
+            };
+
+            // Update UI
+            const creditAmount = document.getElementById('credit-amount');
+            const modalCreditBalance = document.getElementById('modal-credit-balance');
+            const userTier = document.getElementById('user-tier');
+
+            if (creditAmount) creditAmount.textContent = userBalance.credits.toLocaleString();
+            if (modalCreditBalance) modalCreditBalance.textContent = userBalance.credits.toLocaleString();
+
+            if (userTier) {
+                userTier.textContent = userBalance.subscriptionTier.charAt(0).toUpperCase() + userBalance.subscriptionTier.slice(1) + ' Tier';
+                userTier.className = `balance-tier ${userBalance.subscriptionTier}`;
+            }
+
+            return userBalance;
+        }
+    } catch (error) {
+        console.error('Failed to load credit balance:', error);
+    }
+
+    return userBalance;
+}
+
+/**
+ * Load credit packages
+ */
+async function loadCreditPackages() {
+    try {
+        const response = await fetch(`${API_ENDPOINT}/billing/packages`);
+        if (!response.ok) throw new Error('Failed to load packages');
+
+        const data = await response.json();
+        const packagesGrid = document.getElementById('packages-grid');
+
+        if (!packagesGrid) return;
+
+        packagesGrid.innerHTML = data.packages.map(pkg => `
+            <div class="package-card ${pkg.popular ? 'popular' : ''}" data-package-id="${pkg.id}">
+                <div class="package-name">${pkg.name}</div>
+                <div class="package-credits">${(pkg.credits + pkg.bonus_credits).toLocaleString()}</div>
+                <div class="package-price">$${(pkg.price_cents / 100).toFixed(2)}</div>
+                ${pkg.bonus_credits > 0 ? `
+                    <div class="package-bonus">+${pkg.bonus_credits} Bonus Credits!</div>
+                ` : ''}
+            </div>
+        `).join('');
+
+        // Add click handlers
+        packagesGrid.querySelectorAll('.package-card').forEach(card => {
+            card.addEventListener('click', () => {
+                const packageId = card.dataset.packageId;
+                const pkg = data.packages.find(p => p.id === packageId);
+                if (pkg) selectPackage(pkg);
+            });
+        });
+
+    } catch (error) {
+        console.error('Failed to load credit packages:', error);
+        showStatus('Failed to load credit packages', 'error');
+    }
+}
+
+/**
+ * Select a credit package for purchase
+ */
+async function selectPackage(pkg) {
+    currentPackage = pkg;
+
+    // Update payment modal
+    document.getElementById('payment-package-name').textContent = pkg.name;
+    document.getElementById('payment-credits').textContent = `${(pkg.credits + pkg.bonus_credits).toLocaleString()} credits`;
+    document.getElementById('payment-amount').textContent = `$${(pkg.price_cents / 100).toFixed(2)}`;
+
+    // Create payment intent
+    try {
+        showStatus('Preparing payment...', 'info');
+
+        const response = await fetch(`${API_ENDPOINT}/billing/purchase`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ packageId: pkg.id })
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to create payment intent');
+        }
+
+        const { clientSecret, publishableKey } = await response.json();
+
+        // Initialize Stripe if not already done
+        if (!stripe) {
+            stripe = Stripe(publishableKey);
+            const elements = stripe.elements();
+            cardElement = elements.create('card', {
+                style: {
+                    base: {
+                        color: '#fff',
+                        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif',
+                        fontSmoothing: 'antialiased',
+                        fontSize: '16px',
+                        '::placeholder': {
+                            color: '#a8b2d1'
+                        }
+                    },
+                    invalid: {
+                        color: '#f87171',
+                        iconColor: '#f87171'
+                    }
+                }
+            });
+            cardElement.mount('#card-element');
+
+            // Handle real-time validation errors
+            cardElement.on('change', (event) => {
+                const displayError = document.getElementById('card-errors');
+                if (event.error) {
+                    displayError.textContent = event.error.message;
+                } else {
+                    displayError.textContent = '';
+                }
+            });
+        }
+
+        // Store client secret for payment
+        currentPackage.clientSecret = clientSecret;
+
+        // Show payment modal
+        document.getElementById('billing-modal').classList.remove('active');
+        document.getElementById('payment-modal').classList.add('active');
+
+    } catch (error) {
+        console.error('Payment preparation error:', error);
+        showStatus(error.message, 'error');
+    }
+}
+
+/**
+ * Process payment
+ */
+async function processPayment(event) {
+    event.preventDefault();
+
+    if (!stripe || !cardElement || !currentPackage) {
+        showStatus('Payment system not ready', 'error');
+        return;
+    }
+
+    const submitButton = document.getElementById('submit-payment');
+    const buttonText = document.getElementById('payment-button-text');
+    const spinner = document.getElementById('payment-spinner');
+
+    submitButton.disabled = true;
+    buttonText.style.display = 'none';
+    spinner.style.display = 'inline';
+
+    try {
+        const { error, paymentIntent } = await stripe.confirmCardPayment(currentPackage.clientSecret, {
+            payment_method: {
+                card: cardElement
+            }
+        });
+
+        if (error) {
+            throw new Error(error.message);
+        }
+
+        if (paymentIntent.status === 'succeeded') {
+            showStatus('Payment successful! Credits will be added shortly.', 'success');
+
+            // Close payment modal
+            document.getElementById('payment-modal').classList.remove('active');
+
+            // Reload balance after a short delay
+            setTimeout(async () => {
+                await loadCreditBalance();
+                await loadTransactionHistory();
+                showStatus(`${currentPackage.credits + currentPackage.bonus_credits} credits added to your account!`, 'success');
+            }, 2000);
+
+            currentPackage = null;
+        }
+
+    } catch (error) {
+        console.error('Payment error:', error);
+        showStatus(`Payment failed: ${error.message}`, 'error');
+    } finally {
+        submitButton.disabled = false;
+        buttonText.style.display = 'inline';
+        spinner.style.display = 'none';
+    }
+}
+
+/**
+ * Load transaction history
+ */
+async function loadTransactionHistory() {
+    try {
+        const response = await fetch(`${API_ENDPOINT}/billing/history`, {
+            credentials: 'include'
+        });
+
+        if (!response.ok) throw new Error('Failed to load transaction history');
+
+        const data = await response.json();
+        const transactionList = document.getElementById('transaction-list');
+
+        if (!transactionList) return;
+
+        if (!data.transactions || data.transactions.length === 0) {
+            transactionList.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon">📜</div>
+                    <p>No transactions yet</p>
+                </div>
+            `;
+            return;
+        }
+
+        transactionList.innerHTML = data.transactions.map(tx => {
+            const date = new Date(tx.created_at);
+            const isPositive = tx.amount > 0;
+
+            return `
+                <div class="transaction-item">
+                    <div class="transaction-info">
+                        <div class="transaction-description">${tx.description}</div>
+                        <div class="transaction-date">${date.toLocaleDateString()} ${date.toLocaleTimeString()}</div>
+                    </div>
+                    <div class="transaction-amount ${isPositive ? 'positive' : 'negative'}">
+                        ${isPositive ? '+' : ''}${tx.amount.toLocaleString()} credits
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+    } catch (error) {
+        console.error('Failed to load transaction history:', error);
+    }
+}
+
+/**
+ * Setup billing modal
+ */
+function setupBillingModal() {
+    const creditBalance = document.getElementById('credit-balance');
+    const billingModal = document.getElementById('billing-modal');
+    const paymentModal = document.getElementById('payment-modal');
+    const closeBillingBtn = document.getElementById('close-billing-modal');
+    const closePaymentBtn = document.getElementById('close-payment-modal');
+    const paymentForm = document.getElementById('payment-form');
+
+    // Open billing modal
+    if (creditBalance) {
+        creditBalance.addEventListener('click', () => {
+            billingModal.classList.add('active');
+            loadCreditPackages();
+            loadTransactionHistory();
+        });
+    }
+
+    // Close modals
+    if (closeBillingBtn) {
+        closeBillingBtn.addEventListener('click', () => {
+            billingModal.classList.remove('active');
+        });
+    }
+
+    if (closePaymentBtn) {
+        closePaymentBtn.addEventListener('click', () => {
+            paymentModal.classList.remove('active');
+            billingModal.classList.add('active');
+        });
+    }
+
+    // Close on overlay click
+    billingModal?.addEventListener('click', (e) => {
+        if (e.target === billingModal) {
+            billingModal.classList.remove('active');
+        }
+    });
+
+    paymentModal?.addEventListener('click', (e) => {
+        if (e.target === paymentModal) {
+            paymentModal.classList.remove('active');
+        }
+    });
+
+    // Billing tabs
+    document.querySelectorAll('.billing-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            document.querySelectorAll('.billing-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.billing-tab-content').forEach(c => c.classList.remove('active'));
+
+            tab.classList.add('active');
+            const tabName = tab.dataset.billingTab;
+            document.getElementById(tabName)?.classList.add('active');
+
+            // Load data for specific tabs
+            if (tabName === 'buy-credits') {
+                loadCreditPackages();
+            } else if (tabName === 'history') {
+                loadTransactionHistory();
+            }
+        });
+    });
+
+    // Payment form submit
+    if (paymentForm) {
+        paymentForm.addEventListener('submit', processPayment);
+    }
+
+    // Subscription buttons
+    const subscribeProBtn = document.getElementById('subscribe-pro');
+    const subscribeEnterpriseBtn = document.getElementById('subscribe-enterprise');
+    const cancelSubscriptionBtn = document.getElementById('cancel-subscription');
+
+    if (subscribeProBtn) {
+        subscribeProBtn.addEventListener('click', () => handleSubscription('pro_monthly'));
+    }
+
+    if (subscribeEnterpriseBtn) {
+        subscribeEnterpriseBtn.addEventListener('click', () => handleSubscription('enterprise_monthly'));
+    }
+
+    if (cancelSubscriptionBtn) {
+        cancelSubscriptionBtn.addEventListener('click', handleCancelSubscription);
+    }
+}
+
+/**
+ * Handle subscription
+ */
+async function handleSubscription(planId) {
+    try {
+        showStatus('Creating subscription...', 'info');
+
+        const response = await fetch(`${API_ENDPOINT}/billing/subscribe`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ planId })
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to create subscription');
+        }
+
+        const { clientSecret } = await response.json();
+
+        if (clientSecret) {
+            // Initialize Stripe if needed and confirm payment
+            if (!stripe) {
+                const packagesResponse = await fetch(`${API_ENDPOINT}/billing/packages`);
+                const { publishableKey } = await packagesResponse.json();
+                stripe = Stripe(publishableKey);
+            }
+
+            // Redirect to Stripe checkout or confirm payment
+            showStatus('Redirecting to payment...', 'info');
+            // Implementation depends on Stripe subscription flow
+        } else {
+            showStatus('Subscription created successfully!', 'success');
+            await loadCreditBalance();
+        }
+
+    } catch (error) {
+        console.error('Subscription error:', error);
+        showStatus(`Subscription failed: ${error.message}`, 'error');
+    }
+}
+
+/**
+ * Handle subscription cancellation
+ */
+async function handleCancelSubscription() {
+    if (!confirm('Are you sure you want to cancel your subscription? Your benefits will continue until the end of the billing period.')) {
+        return;
+    }
+
+    try {
+        showStatus('Canceling subscription...', 'info');
+
+        const response = await fetch(`${API_ENDPOINT}/billing/cancel-subscription`, {
+            method: 'POST',
+            credentials: 'include'
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to cancel subscription');
+        }
+
+        showStatus('Subscription canceled successfully', 'success');
+        await loadCreditBalance();
+
+    } catch (error) {
+        console.error('Cancel subscription error:', error);
+        showStatus(`Failed to cancel subscription: ${error.message}`, 'error');
+    }
+}
+
+/**
+ * Update insufficient credits UI
+ */
+function showInsufficientCreditsModal(needed, balance) {
+    showStatus(`Insufficient credits. You need ${needed} credits but have ${balance}. Click the balance to buy more credits.`, 'error');
+
+    // Highlight credit balance
+    const creditBalance = document.getElementById('credit-balance');
+    if (creditBalance) {
+        creditBalance.style.animation = 'pulse 1s ease-in-out 3';
+        setTimeout(() => {
+            creditBalance.style.animation = '';
+        }, 3000);
+    }
+}
+
 // Initialize app
 async function init() {
     await initDB();
@@ -1712,6 +2168,12 @@ async function init() {
     setupFileUpload();
     setupProjectFilters();
     setupAuth();
+    setupBillingModal();
+
+    // Load credit balance if logged in
+    if (currentUser) {
+        await loadCreditBalance();
+    }
 
     // Camera controls
     document.getElementById('start-camera').addEventListener('click', startCamera);
