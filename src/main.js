@@ -1895,30 +1895,37 @@ async function cancelJob(projectId, projectName) {
     try {
         showStatus('Cancelling job...', 'info');
 
-        // Get project to find job ID
+        // Get project to find job ID from IndexedDB first
         const project = await db.get('projects', projectId);
         if (!project) {
             throw new Error('Project not found');
         }
 
-        // Find the active job for this project
-        const jobsResponse = await fetch(`${API_ENDPOINT}/projects/${projectId}`, {
-            credentials: 'include',
-        });
+        let jobId = project.jobId;
 
-        if (!jobsResponse.ok) {
-            throw new Error('Failed to get project details');
+        // If not in IndexedDB, fetch from server
+        if (!jobId) {
+            const jobsResponse = await fetch(`${API_ENDPOINT}/projects/${projectId}`, {
+                credentials: 'include',
+            });
+
+            if (!jobsResponse.ok) {
+                throw new Error('Failed to get project details');
+            }
+
+            const projectData = await jobsResponse.json();
+
+            // Find active job from server response
+            if (projectData.jobs && projectData.jobs.length > 0) {
+                const activeJob = projectData.jobs.find(j => j.status === 'queued' || j.status === 'processing');
+                if (activeJob) {
+                    jobId = activeJob.id;
+                }
+            }
         }
 
-        const projectData = await jobsResponse.json();
-
-        // Find job ID - we'll need to store this in the project when we create it
-        // For now, we'll use a best-effort approach
-        let jobId = project.jobId; // Assuming we store this
-
         if (!jobId) {
-            // Try to find the job through the status API - we need to enhance this
-            throw new Error('Job ID not found. Please try again.');
+            throw new Error('No active job found for this project');
         }
 
         // Cancel the job

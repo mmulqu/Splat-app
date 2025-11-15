@@ -694,7 +694,19 @@ async function handleGetProject(projectId: string, request: Request, env: Env, c
             return jsonResponse({ error: 'Access denied' }, 403, corsHeaders);
         }
 
-        return jsonResponse({ project }, 200, corsHeaders);
+        // Get associated jobs if user owns the project
+        let jobs = [];
+        if (user && project.user_id === user.id) {
+            const jobsResult = await env.SPLAT_DB.prepare(
+                'SELECT * FROM jobs WHERE project_id = ? ORDER BY created_at DESC'
+            ).bind(projectId).all();
+            jobs = jobsResult.results || [];
+        }
+
+        return jsonResponse({
+            project,
+            jobs
+        }, 200, corsHeaders);
 
     } catch (error) {
         console.error('Get project error:', error);
