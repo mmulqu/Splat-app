@@ -5,6 +5,7 @@
 
 import { getQualityPreset, calculatePresetCost, getAllQualityPresets, mergeParams, validateParams, type GaussianSplattingParams } from './quality-presets';
 import * as Auth from './auth';
+import * as Billing from './billing';
 
 interface Env {
     SPLAT_BUCKET: R2Bucket;
@@ -22,6 +23,10 @@ interface Env {
     GITHUB_CLIENT_SECRET?: string;
     // Base URL for redirects
     BASE_URL?: string;
+    // Stripe credentials
+    STRIPE_SECRET_KEY?: string;
+    STRIPE_PUBLISHABLE_KEY?: string;
+    STRIPE_WEBHOOK_SECRET?: string;
 }
 
 interface UploadResponse {
@@ -197,6 +202,36 @@ export default {
                 return await handleLogout(request, env, corsHeaders);
             }
 
+            // Billing endpoints
+            if (path === '/api/billing/packages' && request.method === 'GET') {
+                return await handleGetCreditPackages(env, corsHeaders);
+            }
+
+            if (path === '/api/billing/balance' && request.method === 'GET') {
+                return await handleGetBalance(request, env, corsHeaders);
+            }
+
+            if (path === '/api/billing/history' && request.method === 'GET') {
+                return await handleGetHistory(request, env, corsHeaders);
+            }
+
+            if (path === '/api/billing/purchase' && request.method === 'POST') {
+                return await handleCreatePaymentIntent(request, env, corsHeaders);
+            }
+
+            if (path === '/api/billing/subscribe' && request.method === 'POST') {
+                return await handleCreateSubscription(request, env, corsHeaders);
+            }
+
+            if (path === '/api/billing/cancel-subscription' && request.method === 'POST') {
+                return await handleCancelSubscription(request, env, corsHeaders);
+            }
+
+            // Stripe webhook
+            if (path === '/api/webhooks/stripe' && request.method === 'POST') {
+                return await handleStripeWebhook(request, env);
+            }
+
             return new Response('Not Found', { status: 404, headers: corsHeaders });
 
         } catch (error) {
@@ -284,6 +319,17 @@ async function handleProcess(request: Request, env: Env, corsHeaders: Record<str
             return jsonResponse({ success: false, error: 'Project ID required' }, 400, corsHeaders);
         }
 
+        // Check authentication
+        const sessionId = getSessionFromRequest(request);
+        if (!sessionId) {
+            return jsonResponse({ success: false, error: 'Authentication required' }, 401, corsHeaders);
+        }
+
+        const user = await Auth.getUserBySession(env.SPLAT_DB, sessionId);
+        if (!user) {
+            return jsonResponse({ success: false, error: 'Invalid session' }, 401, corsHeaders);
+        }
+
         // Validate custom parameters
         if (Object.keys(customParams).length > 0) {
             const validationErrors = validateParams(customParams);
@@ -309,12 +355,64 @@ async function handleProcess(request: Request, env: Env, corsHeaders: Record<str
         const preset = getQualityPreset(qualityPreset);
         const finalParams = mergeParams(qualityPreset, customParams);
 
+        // Calculate cost
+        const { credits, breakdown } = Billing.calculateJobCost({
+            iterations: finalParams.iterations,
+            photoCount: photos.results.length,
+            qualityPreset
+        });
+
+        // Check free tier limits
+        if (user.subscription_tier === 'free') {
+            const { allowed, reason } = await Billing.checkUsageLimits(env.SPLAT_DB, user.id, user);
+            if (!allowed) {
+                return jsonResponse({
+                    success: false,
+                    error: reason,
+                    needsUpgrade: true
+                }, 403, corsHeaders);
+            }
+
+            // Free tier can only use preview quality
+            if (qualityPreset !== 'preview') {
+                return jsonResponse({
+                    success: false,
+                    error: 'Free tier limited to Preview quality. Upgrade to Pro for all quality levels.',
+                    needsUpgrade: true
+                }, 403, corsHeaders);
+            }
+        }
+
+        // Check credit balance
+        if (!await Billing.hasEnoughCredits(env.SPLAT_DB, user.id, credits)) {
+            return jsonResponse({
+                success: false,
+                error: 'Insufficient credits',
+                required: credits,
+                balance: user.credits,
+                needed: credits - user.credits,
+                needsCredits: true
+            }, 402, corsHeaders); // 402 Payment Required
+        }
+
+        // Deduct credits
+        const { newBalance, transaction } = await Billing.deductCredits(
+            env.SPLAT_DB,
+            user.id,
+            credits,
+            `${preset.name} reconstruction`,
+            {
+                projectId,
+                costBreakdown: breakdown
+            }
+        );
+
         // Create processing job
         const jobId = crypto.randomUUID();
 
         await env.SPLAT_DB.prepare(
-            'INSERT INTO jobs (id, project_id, status, created_at) VALUES (?, ?, ?, ?)'
-        ).bind(jobId, projectId, 'queued', Date.now()).run();
+            'INSERT INTO jobs (id, project_id, status, credits_cost, cost_breakdown, created_at) VALUES (?, ?, ?, ?, ?, ?)'
+        ).bind(jobId, projectId, 'queued', credits, JSON.stringify(breakdown), Date.now()).run();
 
         // Store parameters in job metadata
         await env.SPLAT_DB.prepare(
@@ -329,6 +427,9 @@ async function handleProcess(request: Request, env: Env, corsHeaders: Record<str
         await env.SPLAT_DB.prepare(
             'UPDATE projects SET status = ? WHERE id = ?'
         ).bind('processing', projectId).run();
+
+        // Increment usage tracking
+        await Billing.incrementUsage(env.SPLAT_DB, user.id, credits);
 
         // Queue processing job
         await env.PROCESSING_QUEUE.send({
@@ -348,7 +449,12 @@ async function handleProcess(request: Request, env: Env, corsHeaders: Record<str
             jobId,
         };
 
-        return jsonResponse(response, 200, corsHeaders);
+        return jsonResponse({
+            ...response,
+            creditsCharged: credits,
+            newBalance,
+            transactionId: transaction.id
+        }, 200, corsHeaders);
 
     } catch (error) {
         console.error('Process error:', error);
@@ -1223,6 +1329,618 @@ function getSessionFromRequest(request: Request): string | null {
     if (!sessionCookie) return null;
 
     return sessionCookie.split('=')[1];
+}
+
+/**
+ * Get credit packages
+ */
+async function handleGetCreditPackages(env: Env, corsHeaders: Record<string, string>): Promise<Response> {
+    try {
+        const packages = await Billing.getCreditPackages(env.SPLAT_DB);
+        return jsonResponse({ packages }, 200, corsHeaders);
+    } catch (error) {
+        console.error('Get credit packages error:', error);
+        return jsonResponse({ error: 'Failed to get credit packages' }, 500, corsHeaders);
+    }
+}
+
+/**
+ * Get user's credit balance
+ */
+async function handleGetBalance(request: Request, env: Env, corsHeaders: Record<string, string>): Promise<Response> {
+    const sessionId = getSessionFromRequest(request);
+
+    if (!sessionId) {
+        return jsonResponse({ error: 'Authentication required' }, 401, corsHeaders);
+    }
+
+    try {
+        const user = await Auth.getUserBySession(env.SPLAT_DB, sessionId);
+
+        if (!user) {
+            return jsonResponse({ error: 'Invalid session' }, 401, corsHeaders);
+        }
+
+        return jsonResponse({
+            credits: user.credits,
+            creditsUsed: user.credits_used,
+            subscriptionTier: user.subscription_tier,
+            subscriptionStatus: user.subscription_status
+        }, 200, corsHeaders);
+    } catch (error) {
+        console.error('Get balance error:', error);
+        return jsonResponse({ error: 'Failed to get balance' }, 500, corsHeaders);
+    }
+}
+
+/**
+ * Get user's transaction history
+ */
+async function handleGetHistory(request: Request, env: Env, corsHeaders: Record<string, string>): Promise<Response> {
+    const sessionId = getSessionFromRequest(request);
+
+    if (!sessionId) {
+        return jsonResponse({ error: 'Authentication required' }, 401, corsHeaders);
+    }
+
+    try {
+        const user = await Auth.getUserBySession(env.SPLAT_DB, sessionId);
+
+        if (!user) {
+            return jsonResponse({ error: 'Invalid session' }, 401, corsHeaders);
+        }
+
+        const transactions = await Billing.getTransactionHistory(env.SPLAT_DB, user.id);
+
+        return jsonResponse({ transactions }, 200, corsHeaders);
+    } catch (error) {
+        console.error('Get history error:', error);
+        return jsonResponse({ error: 'Failed to get transaction history' }, 500, corsHeaders);
+    }
+}
+
+/**
+ * Create Stripe payment intent for credit purchase
+ */
+async function handleCreatePaymentIntent(request: Request, env: Env, corsHeaders: Record<string, string>): Promise<Response> {
+    if (!env.STRIPE_SECRET_KEY) {
+        return jsonResponse({ error: 'Stripe not configured' }, 500, corsHeaders);
+    }
+
+    const sessionId = getSessionFromRequest(request);
+
+    if (!sessionId) {
+        return jsonResponse({ error: 'Authentication required' }, 401, corsHeaders);
+    }
+
+    try {
+        const user = await Auth.getUserBySession(env.SPLAT_DB, sessionId);
+
+        if (!user) {
+            return jsonResponse({ error: 'Invalid session' }, 401, corsHeaders);
+        }
+
+        const body = await request.json() as any;
+        const { packageId } = body;
+
+        if (!packageId) {
+            return jsonResponse({ error: 'Package ID required' }, 400, corsHeaders);
+        }
+
+        const pkg = await Billing.getCreditPackage(env.SPLAT_DB, packageId);
+
+        if (!pkg) {
+            return jsonResponse({ error: 'Invalid package' }, 404, corsHeaders);
+        }
+
+        // Create or get Stripe customer
+        let stripeCustomerId = user.stripe_customer_id;
+        if (!stripeCustomerId) {
+            const customer = await createStripeCustomer(env.STRIPE_SECRET_KEY, user.email, user.name);
+            stripeCustomerId = customer.id;
+            await Billing.createStripeCustomer(env.SPLAT_DB, user.id, user.email, stripeCustomerId);
+        }
+
+        // Create payment intent
+        const paymentIntent = await createStripePaymentIntent(
+            env.STRIPE_SECRET_KEY,
+            pkg.price_cents,
+            stripeCustomerId,
+            {
+                userId: user.id,
+                packageId: pkg.id,
+                credits: pkg.credits + pkg.bonus_credits
+            }
+        );
+
+        return jsonResponse({
+            clientSecret: paymentIntent.client_secret,
+            amount: pkg.price_cents,
+            credits: pkg.credits + pkg.bonus_credits,
+            publishableKey: env.STRIPE_PUBLISHABLE_KEY
+        }, 200, corsHeaders);
+    } catch (error) {
+        console.error('Create payment intent error:', error);
+        return jsonResponse({ error: 'Failed to create payment intent' }, 500, corsHeaders);
+    }
+}
+
+/**
+ * Create Stripe subscription
+ */
+async function handleCreateSubscription(request: Request, env: Env, corsHeaders: Record<string, string>): Promise<Response> {
+    if (!env.STRIPE_SECRET_KEY) {
+        return jsonResponse({ error: 'Stripe not configured' }, 500, corsHeaders);
+    }
+
+    const sessionId = getSessionFromRequest(request);
+
+    if (!sessionId) {
+        return jsonResponse({ error: 'Authentication required' }, 401, corsHeaders);
+    }
+
+    try {
+        const user = await Auth.getUserBySession(env.SPLAT_DB, sessionId);
+
+        if (!user) {
+            return jsonResponse({ error: 'Invalid session' }, 401, corsHeaders);
+        }
+
+        const body = await request.json() as any;
+        const { planId } = body;
+
+        if (!planId) {
+            return jsonResponse({ error: 'Plan ID required' }, 400, corsHeaders);
+        }
+
+        // Get subscription plan
+        const plan = await env.SPLAT_DB.prepare(
+            'SELECT * FROM subscription_plans WHERE id = ? AND active = 1'
+        ).bind(planId).first<any>();
+
+        if (!plan) {
+            return jsonResponse({ error: 'Invalid plan' }, 404, corsHeaders);
+        }
+
+        // Create or get Stripe customer
+        let stripeCustomerId = user.stripe_customer_id;
+        if (!stripeCustomerId) {
+            const customer = await createStripeCustomer(env.STRIPE_SECRET_KEY, user.email, user.name);
+            stripeCustomerId = customer.id;
+            await Billing.createStripeCustomer(env.SPLAT_DB, user.id, user.email, stripeCustomerId);
+        }
+
+        // Create subscription
+        const subscription = await createStripeSubscription(
+            env.STRIPE_SECRET_KEY,
+            stripeCustomerId,
+            plan.stripe_price_id,
+            {
+                userId: user.id,
+                planId: plan.id,
+                tier: plan.tier
+            }
+        );
+
+        // Update user subscription info
+        await env.SPLAT_DB.prepare(`
+            UPDATE users
+            SET subscription_tier = ?,
+                subscription_status = ?,
+                subscription_id = ?,
+                subscription_current_period_end = ?
+            WHERE id = ?
+        `).bind(
+            plan.tier,
+            subscription.status,
+            subscription.id,
+            subscription.current_period_end * 1000,
+            user.id
+        ).run();
+
+        return jsonResponse({
+            success: true,
+            subscriptionId: subscription.id,
+            clientSecret: subscription.latest_invoice?.payment_intent?.client_secret
+        }, 200, corsHeaders);
+    } catch (error) {
+        console.error('Create subscription error:', error);
+        return jsonResponse({ error: 'Failed to create subscription' }, 500, corsHeaders);
+    }
+}
+
+/**
+ * Cancel subscription
+ */
+async function handleCancelSubscription(request: Request, env: Env, corsHeaders: Record<string, string>): Promise<Response> {
+    if (!env.STRIPE_SECRET_KEY) {
+        return jsonResponse({ error: 'Stripe not configured' }, 500, corsHeaders);
+    }
+
+    const sessionId = getSessionFromRequest(request);
+
+    if (!sessionId) {
+        return jsonResponse({ error: 'Authentication required' }, 401, corsHeaders);
+    }
+
+    try {
+        const user = await Auth.getUserBySession(env.SPLAT_DB, sessionId);
+
+        if (!user) {
+            return jsonResponse({ error: 'Invalid session' }, 401, corsHeaders);
+        }
+
+        if (!user.subscription_id) {
+            return jsonResponse({ error: 'No active subscription' }, 400, corsHeaders);
+        }
+
+        // Cancel subscription at period end
+        await cancelStripeSubscription(env.STRIPE_SECRET_KEY, user.subscription_id);
+
+        // Update user status
+        await env.SPLAT_DB.prepare(`
+            UPDATE users SET subscription_status = 'canceled' WHERE id = ?
+        `).bind(user.id).run();
+
+        return jsonResponse({ success: true }, 200, corsHeaders);
+    } catch (error) {
+        console.error('Cancel subscription error:', error);
+        return jsonResponse({ error: 'Failed to cancel subscription' }, 500, corsHeaders);
+    }
+}
+
+/**
+ * Handle Stripe webhooks
+ */
+async function handleStripeWebhook(request: Request, env: Env): Promise<Response> {
+    if (!env.STRIPE_SECRET_KEY || !env.STRIPE_WEBHOOK_SECRET) {
+        return new Response('Stripe not configured', { status: 500 });
+    }
+
+    try {
+        const signature = request.headers.get('stripe-signature');
+        if (!signature) {
+            return new Response('Missing signature', { status: 400 });
+        }
+
+        const body = await request.text();
+
+        // Verify webhook signature
+        const event = await verifyStripeWebhook(body, signature, env.STRIPE_WEBHOOK_SECRET);
+
+        // Handle different event types
+        switch (event.type) {
+            case 'payment_intent.succeeded':
+                await handlePaymentSuccess(event.data.object, env);
+                break;
+
+            case 'customer.subscription.created':
+            case 'customer.subscription.updated':
+                await handleSubscriptionUpdate(event.data.object, env);
+                break;
+
+            case 'customer.subscription.deleted':
+                await handleSubscriptionDeleted(event.data.object, env);
+                break;
+
+            case 'invoice.payment_succeeded':
+                await handleSubscriptionPayment(event.data.object, env);
+                break;
+
+            default:
+                console.log(`Unhandled event type: ${event.type}`);
+        }
+
+        return new Response(JSON.stringify({ received: true }), { status: 200 });
+    } catch (error) {
+        console.error('Stripe webhook error:', error);
+        return new Response(`Webhook error: ${error}`, { status: 400 });
+    }
+}
+
+/**
+ * Handle successful payment intent
+ */
+async function handlePaymentSuccess(paymentIntent: any, env: Env) {
+    const { userId, packageId, credits } = paymentIntent.metadata;
+
+    if (!userId || !credits) {
+        console.error('Missing metadata in payment intent');
+        return;
+    }
+
+    try {
+        // Add credits to user account
+        await Billing.addCredits(
+            env.SPLAT_DB,
+            userId,
+            parseInt(credits),
+            'purchase',
+            `Credit purchase: ${packageId}`,
+            {
+                stripePaymentIntentId: paymentIntent.id,
+                stripeChargeId: paymentIntent.charges?.data?.[0]?.id,
+                amountCents: paymentIntent.amount,
+                currency: paymentIntent.currency
+            }
+        );
+
+        console.log(`Added ${credits} credits to user ${userId}`);
+    } catch (error) {
+        console.error('Error handling payment success:', error);
+    }
+}
+
+/**
+ * Handle subscription update
+ */
+async function handleSubscriptionUpdate(subscription: any, env: Env) {
+    const { userId, tier } = subscription.metadata;
+
+    if (!userId) {
+        console.error('Missing userId in subscription metadata');
+        return;
+    }
+
+    try {
+        await env.SPLAT_DB.prepare(`
+            UPDATE users
+            SET subscription_tier = ?,
+                subscription_status = ?,
+                subscription_id = ?,
+                subscription_current_period_end = ?
+            WHERE id = ?
+        `).bind(
+            tier || 'pro',
+            subscription.status,
+            subscription.id,
+            subscription.current_period_end * 1000,
+            userId
+        ).run();
+
+        console.log(`Updated subscription for user ${userId}: ${tier} (${subscription.status})`);
+    } catch (error) {
+        console.error('Error handling subscription update:', error);
+    }
+}
+
+/**
+ * Handle subscription deletion
+ */
+async function handleSubscriptionDeleted(subscription: any, env: Env) {
+    const { userId } = subscription.metadata;
+
+    if (!userId) {
+        console.error('Missing userId in subscription metadata');
+        return;
+    }
+
+    try {
+        await env.SPLAT_DB.prepare(`
+            UPDATE users
+            SET subscription_tier = 'free',
+                subscription_status = NULL,
+                subscription_id = NULL,
+                subscription_current_period_end = NULL
+            WHERE id = ?
+        `).bind(userId).run();
+
+        console.log(`Subscription deleted for user ${userId}`);
+    } catch (error) {
+        console.error('Error handling subscription deletion:', error);
+    }
+}
+
+/**
+ * Handle subscription payment (monthly recurring)
+ */
+async function handleSubscriptionPayment(invoice: any, env: Env) {
+    const subscription = invoice.subscription_details || invoice.subscription;
+    if (!subscription) return;
+
+    const { userId, planId } = invoice.metadata || subscription.metadata || {};
+
+    if (!userId) {
+        console.error('Missing userId in invoice metadata');
+        return;
+    }
+
+    try {
+        // Get plan details
+        const plan = await env.SPLAT_DB.prepare(
+            'SELECT * FROM subscription_plans WHERE id = ?'
+        ).bind(planId).first<any>();
+
+        if (!plan) {
+            console.error('Plan not found:', planId);
+            return;
+        }
+
+        // Add monthly credits
+        await Billing.addCredits(
+            env.SPLAT_DB,
+            userId,
+            plan.monthly_credits,
+            'subscription',
+            `${plan.name} monthly credits`,
+            {
+                stripeChargeId: invoice.charge,
+                amountCents: invoice.amount_paid,
+                currency: invoice.currency
+            }
+        );
+
+        console.log(`Added ${plan.monthly_credits} subscription credits to user ${userId}`);
+    } catch (error) {
+        console.error('Error handling subscription payment:', error);
+    }
+}
+
+/**
+ * Stripe API helper: Create customer
+ */
+async function createStripeCustomer(apiKey: string, email: string, name?: string | null): Promise<any> {
+    const response = await fetch('https://api.stripe.com/v1/customers', {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: new URLSearchParams({
+            email,
+            ...(name && { name })
+        })
+    });
+
+    if (!response.ok) {
+        throw new Error(`Stripe API error: ${response.statusText}`);
+    }
+
+    return await response.json();
+}
+
+/**
+ * Stripe API helper: Create payment intent
+ */
+async function createStripePaymentIntent(
+    apiKey: string,
+    amount: number,
+    customerId: string,
+    metadata: Record<string, string>
+): Promise<any> {
+    const params = new URLSearchParams({
+        amount: amount.toString(),
+        currency: 'usd',
+        customer: customerId,
+        'automatic_payment_methods[enabled]': 'true'
+    });
+
+    // Add metadata
+    Object.entries(metadata).forEach(([key, value]) => {
+        params.append(`metadata[${key}]`, value);
+    });
+
+    const response = await fetch('https://api.stripe.com/v1/payment_intents', {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: params
+    });
+
+    if (!response.ok) {
+        throw new Error(`Stripe API error: ${response.statusText}`);
+    }
+
+    return await response.json();
+}
+
+/**
+ * Stripe API helper: Create subscription
+ */
+async function createStripeSubscription(
+    apiKey: string,
+    customerId: string,
+    priceId: string,
+    metadata: Record<string, string>
+): Promise<any> {
+    const params = new URLSearchParams({
+        customer: customerId,
+        'items[0][price]': priceId,
+        'payment_behavior': 'default_incomplete',
+        'payment_settings[save_default_payment_method]': 'on_subscription',
+        'expand[0]': 'latest_invoice.payment_intent'
+    });
+
+    // Add metadata
+    Object.entries(metadata).forEach(([key, value]) => {
+        params.append(`metadata[${key}]`, value);
+    });
+
+    const response = await fetch('https://api.stripe.com/v1/subscriptions', {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: params
+    });
+
+    if (!response.ok) {
+        throw new Error(`Stripe API error: ${response.statusText}`);
+    }
+
+    return await response.json();
+}
+
+/**
+ * Stripe API helper: Cancel subscription
+ */
+async function cancelStripeSubscription(apiKey: string, subscriptionId: string): Promise<any> {
+    const response = await fetch(`https://api.stripe.com/v1/subscriptions/${subscriptionId}`, {
+        method: 'DELETE',
+        headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/x-www-form-urlencoded'
+        }
+    });
+
+    if (!response.ok) {
+        throw new Error(`Stripe API error: ${response.statusText}`);
+    }
+
+    return await response.json();
+}
+
+/**
+ * Stripe API helper: Verify webhook signature
+ */
+async function verifyStripeWebhook(body: string, signature: string, secret: string): Promise<any> {
+    // Extract timestamp and signatures from header
+    const elements = signature.split(',');
+    const timestamp = elements.find(e => e.startsWith('t='))?.split('=')[1];
+    const signatures = elements.filter(e => e.startsWith('v1='));
+
+    if (!timestamp || signatures.length === 0) {
+        throw new Error('Invalid signature header');
+    }
+
+    // Construct signed payload
+    const signedPayload = `${timestamp}.${body}`;
+
+    // Compute expected signature using HMAC SHA-256
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+        'raw',
+        encoder.encode(secret),
+        { name: 'HMAC', hash: 'SHA-256' },
+        false,
+        ['sign']
+    );
+
+    const signatureBytes = await crypto.subtle.sign(
+        'HMAC',
+        key,
+        encoder.encode(signedPayload)
+    );
+
+    const expectedSignature = Array.from(new Uint8Array(signatureBytes))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+
+    // Compare signatures
+    const signatureMatches = signatures.some(sig => {
+        const providedSignature = sig.split('=')[1];
+        return providedSignature === expectedSignature;
+    });
+
+    if (!signatureMatches) {
+        throw new Error('Invalid signature');
+    }
+
+    // Parse and return event
+    return JSON.parse(body);
 }
 
 /**
