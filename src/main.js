@@ -1,5 +1,5 @@
 import { openDB } from 'idb';
-import { optimizeImage, batchOptimizeImages, calculateSavings, formatBytes } from './image-utils.js';
+import { optimizeImage, batchOptimizeImages, calculateSavings, formatBytes, detectBlur, getBlurStatistics } from './image-utils.js';
 
 // Configuration
 const API_ENDPOINT = import.meta.env.VITE_API_ENDPOINT || '/api';
@@ -197,16 +197,25 @@ async function capturePhoto() {
         // Optimize the captured photo
         const optimized = await optimizeImage(file);
 
+        // Detect blur
+        const blurResult = await detectBlur(optimized.file);
+
         const photo = {
             blob: optimized.file,
             url: URL.createObjectURL(optimized.file),
             timestamp: Date.now(),
-            metadata: optimized.metadata
+            metadata: optimized.metadata,
+            blur: blurResult
         };
 
         capturedPhotos.push(photo);
         updatePhotoCount();
-        addThumbnail(photo.url);
+        addThumbnail(photo.url, blurResult);
+
+        // Show warning if blurry
+        if (blurResult.isBlurry) {
+            showStatus(`⚠️ Last photo appears blurry. ${blurResult.recommendation}`, 'warning');
+        }
 
         if (capturedPhotos.length >= 5) {
             document.getElementById('process-captures').style.display = 'inline-block';
@@ -238,12 +247,47 @@ function updatePhotoCount() {
     }
 }
 
-function addThumbnail(url) {
+function addThumbnail(url, blurResult) {
     const grid = document.getElementById('thumbnail-grid');
+    const container = document.createElement('div');
+    container.className = 'thumbnail-container';
+
     const img = document.createElement('img');
     img.src = url;
     img.className = 'thumbnail';
-    grid.appendChild(img);
+
+    container.appendChild(img);
+
+    // Add blur indicator if provided
+    if (blurResult) {
+        const indicator = document.createElement('div');
+        indicator.className = 'blur-indicator';
+
+        const icon = blurResult.quality === 'sharp' ? '✅' :
+                    blurResult.quality === 'acceptable' ? '🟡' : '⚠️';
+        const bgColor = blurResult.quality === 'sharp' ? 'rgba(74, 222, 128, 0.9)' :
+                       blurResult.quality === 'acceptable' ? 'rgba(250, 204, 21, 0.9)' : 'rgba(248, 113, 113, 0.9)';
+
+        indicator.style.cssText = `
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            background: ${bgColor};
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+        `;
+        indicator.textContent = icon;
+        indicator.title = blurResult.recommendation;
+
+        container.appendChild(indicator);
+    }
+
+    grid.appendChild(container);
 }
 
 async function processCapturedPhotos() {
@@ -321,6 +365,7 @@ function setupFileUpload() {
 
 let selectedFiles = [];
 let optimizedFiles = [];
+let blurResults = [];
 
 async function handleFiles(files) {
     selectedFiles = files;
@@ -341,46 +386,98 @@ async function handleFiles(files) {
     fileList.appendChild(optimizationStatus);
 
     // Optimize images with progress
-    const progressCallback = (current, total) => {
+    const optimizationCallback = (current, total) => {
         const fillElement = document.getElementById('optimization-fill');
+        const textElement = fileList.querySelector('.optimization-text');
         if (fillElement) {
             const percent = (current / total) * 100;
             fillElement.style.width = percent + '%';
         }
+        if (textElement) {
+            textElement.textContent = `Optimizing images... ${current}/${total}`;
+        }
     };
 
-    const optimizationResults = await batchOptimizeImages(Array.from(files), progressCallback);
+    const optimizationResults = await batchOptimizeImages(Array.from(files), optimizationCallback);
     optimizedFiles = optimizationResults.map(r => r.file);
 
-    // Calculate and display savings
-    const savings = calculateSavings(optimizationResults);
+    // Update status for blur detection
+    optimizationStatus.innerHTML = `
+        <div class="optimization-progress">
+            <div class="optimization-text">Analyzing image quality...</div>
+            <div class="optimization-bar">
+                <div class="optimization-fill" id="blur-detection-fill"></div>
+            </div>
+        </div>
+    `;
 
-    // Clear and show file list with optimization info
+    // Detect blur with progress
+    const blurCallback = (current, total) => {
+        const fillElement = document.getElementById('blur-detection-fill');
+        const textElement = fileList.querySelector('.optimization-text');
+        if (fillElement) {
+            const percent = (current / total) * 100;
+            fillElement.style.width = percent + '%';
+        }
+        if (textElement) {
+            textElement.textContent = `Analyzing image quality... ${current}/${total}`;
+        }
+    };
+
+    blurResults = await Promise.all(
+        optimizedFiles.map(async (file, index) => ({
+            file,
+            optimization: optimizationResults[index],
+            blur: await detectBlur(file)
+        }))
+    );
+
+    // Calculate statistics
+    const savings = calculateSavings(optimizationResults);
+    const blurStats = getBlurStatistics(blurResults);
+
+    // Clear and show file list
     fileList.innerHTML = '';
 
-    if (savings.totalSavings > 0) {
-        const savingsInfo = document.createElement('div');
-        savingsInfo.className = 'optimization-info';
-        savingsInfo.innerHTML = `
-            <div class="optimization-success">
-                ✅ Images optimized! Saved ${formatBytes(savings.totalSavings)} (${savings.savingsPercent}% reduction)
-            </div>
-        `;
-        fileList.appendChild(savingsInfo);
-    }
+    // Show combined stats
+    const statsInfo = document.createElement('div');
+    statsInfo.className = 'optimization-info';
 
-    optimizationResults.forEach((result, index) => {
+    const blurWarningClass = blurStats.blurry > 0 ? 'blur-warning' : 'blur-success';
+    const blurIcon = blurStats.blurry > 0 ? '⚠️' : '✅';
+
+    statsInfo.innerHTML = `
+        <div class="optimization-success">
+            ${savings.totalSavings > 0 ? `✅ Optimized: Saved ${formatBytes(savings.totalSavings)} (${savings.savingsPercent}% reduction)` : '✅ Images ready'}
+        </div>
+        <div class="${blurWarningClass}" style="margin-top: 8px;">
+            ${blurIcon} Quality: ${blurStats.sharp} sharp, ${blurStats.acceptable} acceptable${blurStats.blurry > 0 ? `, ${blurStats.blurry} blurry` : ''}
+        </div>
+        ${blurStats.blurry > 0 ? `<div class="blur-recommendation">${blurStats.recommendation}</div>` : ''}
+    `;
+    fileList.appendChild(statsInfo);
+
+    // Show file list with blur indicators
+    blurResults.forEach((result, index) => {
         const fileItem = document.createElement('div');
-        fileItem.className = 'file-item';
-        const original = result.metadata.original;
-        const optimized = result.metadata.optimized;
+        const isBlurry = result.blur.isBlurry;
+        fileItem.className = `file-item ${isBlurry ? 'file-item-blurry' : ''}`;
+
+        const original = result.optimization.metadata.original;
+        const optimized = result.optimization.metadata.optimized;
+
+        const qualityIcon = result.blur.quality === 'sharp' ? '✅' :
+                           result.blur.quality === 'acceptable' ? '🟡' : '⚠️';
+        const qualityColor = result.blur.quality === 'sharp' ? '#4ade80' :
+                            result.blur.quality === 'acceptable' ? '#facc15' : '#f87171';
 
         fileItem.innerHTML = `
             <span>${result.file.name}</span>
             <div class="file-info">
                 <span class="original-size" style="text-decoration: line-through; color: #888;">${formatBytes(original.size)}</span>
                 <span class="optimized-size" style="color: #4ade80; margin-left: 8px;">${formatBytes(optimized.size)}</span>
-                ${result.metadata.wasResized ? `<span style="color: #667eea; margin-left: 8px;">📐 Resized</span>` : ''}
+                ${result.optimization.metadata.wasResized ? `<span style="color: #667eea; margin-left: 8px;">📐 Resized</span>` : ''}
+                <span style="color: ${qualityColor}; margin-left: 8px;" title="${result.blur.recommendation}">${qualityIcon} ${result.blur.quality}</span>
             </div>
         `;
         fileList.appendChild(fileItem);

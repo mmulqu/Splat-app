@@ -274,3 +274,173 @@ export function formatBytes(bytes) {
 
     return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
 }
+
+/**
+ * Detect blur in image using Laplacian variance
+ * Higher variance = sharper image, Lower variance = blurrier image
+ * @param {File} file - Image file
+ * @returns {Promise<Object>} Blur detection results
+ */
+export async function detectBlur(file) {
+    try {
+        const img = await loadImage(file);
+
+        // Create canvas for analysis
+        const canvas = document.createElement('canvas');
+
+        // Use smaller canvas for faster processing
+        const maxSize = 500;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxSize || height > maxSize) {
+            const scale = Math.min(maxSize / width, maxSize / height);
+            width = Math.floor(width * scale);
+            height = Math.floor(height * scale);
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+
+        // Get image data
+        const imageData = ctx.getImageData(0, 0, width, height);
+        const data = imageData.data;
+
+        // Convert to grayscale
+        const gray = new Float32Array(width * height);
+        for (let i = 0; i < data.length; i += 4) {
+            const idx = i / 4;
+            gray[idx] = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+        }
+
+        // Apply Laplacian operator
+        const laplacian = new Float32Array(width * height);
+        for (let y = 1; y < height - 1; y++) {
+            for (let x = 1; x < width - 1; x++) {
+                const idx = y * width + x;
+
+                // Laplacian kernel
+                const value =
+                    -gray[idx - width - 1] - gray[idx - width] - gray[idx - width + 1] +
+                    -gray[idx - 1] + 8 * gray[idx] - gray[idx + 1] +
+                    -gray[idx + width - 1] - gray[idx + width] - gray[idx + width + 1];
+
+                laplacian[idx] = value;
+            }
+        }
+
+        // Calculate variance of Laplacian
+        let mean = 0;
+        let count = 0;
+
+        for (let i = 0; i < laplacian.length; i++) {
+            mean += laplacian[i];
+            count++;
+        }
+        mean /= count;
+
+        let variance = 0;
+        for (let i = 0; i < laplacian.length; i++) {
+            const diff = laplacian[i] - mean;
+            variance += diff * diff;
+        }
+        variance /= count;
+
+        // Determine blur level
+        // These thresholds can be adjusted based on testing
+        const SHARP_THRESHOLD = 100;
+        const ACCEPTABLE_THRESHOLD = 50;
+
+        let quality, level, recommendation;
+
+        if (variance > SHARP_THRESHOLD) {
+            quality = 'sharp';
+            level = 'excellent';
+            recommendation = 'Perfect for 3D reconstruction';
+        } else if (variance > ACCEPTABLE_THRESHOLD) {
+            quality = 'acceptable';
+            level = 'good';
+            recommendation = 'Suitable for reconstruction';
+        } else {
+            quality = 'blurry';
+            level = 'poor';
+            recommendation = 'Retake this photo for better results';
+        }
+
+        return {
+            variance: Math.round(variance * 100) / 100,
+            quality,
+            level,
+            recommendation,
+            isBlurry: quality === 'blurry',
+            isAcceptable: quality !== 'blurry'
+        };
+
+    } catch (error) {
+        console.error('Blur detection error:', error);
+        return {
+            variance: 0,
+            quality: 'unknown',
+            level: 'unknown',
+            recommendation: 'Could not analyze image',
+            isBlurry: false,
+            isAcceptable: true,
+            error: error.message
+        };
+    }
+}
+
+/**
+ * Batch blur detection for multiple images
+ * @param {File[]} files - Array of image files
+ * @param {Function} progressCallback - Progress callback
+ * @returns {Promise<Array>} Blur detection results
+ */
+export async function batchBlurDetection(files, progressCallback) {
+    const results = [];
+
+    for (let i = 0; i < files.length; i++) {
+        if (progressCallback) {
+            progressCallback(i + 1, files.length);
+        }
+
+        const result = await detectBlur(files[i]);
+        results.push({
+            file: files[i],
+            blur: result
+        });
+    }
+
+    return results;
+}
+
+/**
+ * Get blur statistics for a batch of results
+ * @param {Array} results - Blur detection results
+ * @returns {Object} Statistics
+ */
+export function getBlurStatistics(results) {
+    const sharp = results.filter(r => r.blur.quality === 'sharp').length;
+    const acceptable = results.filter(r => r.blur.quality === 'acceptable').length;
+    const blurry = results.filter(r => r.blur.quality === 'blurry').length;
+
+    const averageVariance = results.reduce((sum, r) => sum + r.blur.variance, 0) / results.length;
+
+    return {
+        total: results.length,
+        sharp,
+        acceptable,
+        blurry,
+        blurryPercentage: Math.round((blurry / results.length) * 100),
+        acceptablePercentage: Math.round(((sharp + acceptable) / results.length) * 100),
+        averageVariance: Math.round(averageVariance * 100) / 100,
+        recommendation: blurry > results.length / 2 ?
+            'Most photos are blurry. Consider retaking with better focus.' :
+            blurry > 0 ?
+            `${blurry} photo(s) may be blurry. Review before processing.` :
+            'All photos look sharp! Ready for processing.'
+    };
+}
