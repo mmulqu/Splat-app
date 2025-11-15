@@ -3,7 +3,7 @@
  * Handles photo uploads, R2 storage, and GPU processing orchestration
  */
 
-import { getQualityPreset, calculatePresetCost, getAllQualityPresets } from './quality-presets';
+import { getQualityPreset, calculatePresetCost, getAllQualityPresets, mergeParams, validateParams, type GaussianSplattingParams } from './quality-presets';
 import * as Auth from './auth';
 
 interface Env {
@@ -34,6 +34,7 @@ interface UploadResponse {
 interface ProcessRequest {
     projectId: string;
     qualityPreset?: string; // preview, standard, high, ultra
+    customParams?: Partial<GaussianSplattingParams>; // Override specific parameters
 }
 
 interface ProcessResponse {
@@ -277,10 +278,22 @@ async function handleUpload(request: Request, env: Env, corsHeaders: Record<stri
 async function handleProcess(request: Request, env: Env, corsHeaders: Record<string, string>): Promise<Response> {
     try {
         const body = await request.json() as ProcessRequest;
-        const { projectId, qualityPreset = 'standard' } = body;
+        const { projectId, qualityPreset = 'standard', customParams = {} } = body;
 
         if (!projectId) {
             return jsonResponse({ success: false, error: 'Project ID required' }, 400, corsHeaders);
+        }
+
+        // Validate custom parameters
+        if (Object.keys(customParams).length > 0) {
+            const validationErrors = validateParams(customParams);
+            if (validationErrors.length > 0) {
+                return jsonResponse({
+                    success: false,
+                    error: 'Invalid parameters',
+                    validationErrors
+                }, 400, corsHeaders);
+            }
         }
 
         // Get project photos from database
@@ -292,8 +305,9 @@ async function handleProcess(request: Request, env: Env, corsHeaders: Record<str
             return jsonResponse({ success: false, error: 'Insufficient photos (minimum 5)' }, 400, corsHeaders);
         }
 
-        // Get quality preset
+        // Get quality preset and merge with custom parameters
         const preset = getQualityPreset(qualityPreset);
+        const finalParams = mergeParams(qualityPreset, customParams);
 
         // Create processing job
         const jobId = crypto.randomUUID();
@@ -302,10 +316,14 @@ async function handleProcess(request: Request, env: Env, corsHeaders: Record<str
             'INSERT INTO jobs (id, project_id, status, created_at) VALUES (?, ?, ?, ?)'
         ).bind(jobId, projectId, 'queued', Date.now()).run();
 
-        // Store quality preset in job metadata
+        // Store parameters in job metadata
         await env.SPLAT_DB.prepare(
             'UPDATE jobs SET external_id = ? WHERE id = ?'
-        ).bind(JSON.stringify({ qualityPreset, iterations: preset.iterations }), jobId).run();
+        ).bind(JSON.stringify({
+            qualityPreset,
+            params: finalParams,
+            customParams
+        }), jobId).run();
 
         // Update project status
         await env.SPLAT_DB.prepare(
@@ -317,11 +335,12 @@ async function handleProcess(request: Request, env: Env, corsHeaders: Record<str
             jobId,
             projectId,
             photoKeys: photos.results.map((p: any) => p.r2_key),
+            params: finalParams
         });
 
         // Trigger GPU processing with RunPod
         if (env.RUNPOD_API_KEY && env.RUNPOD_ENDPOINT_ID) {
-            await triggerRunPodProcessing(jobId, projectId, photos.results, env, preset.iterations);
+            await triggerRunPodProcessing(jobId, projectId, photos.results, env, finalParams);
         }
 
         const response: ProcessResponse = {
@@ -676,7 +695,7 @@ async function handleUpdateProject(projectId: string, request: Request, env: Env
 /**
  * Trigger RunPod GPU processing
  */
-async function triggerRunPodProcessing(jobId: string, projectId: string, photos: any[], env: Env, iterations: number = 7000) {
+async function triggerRunPodProcessing(jobId: string, projectId: string, photos: any[], env: Env, params: GaussianSplattingParams) {
     try {
         // Generate pre-signed URLs for photos
         const imageUrls = await Promise.all(
@@ -698,7 +717,7 @@ async function triggerRunPodProcessing(jobId: string, projectId: string, photos:
         // Get the worker base URL for webhook
         const webhookUrl = `${new URL(env.WORKER_URL || 'https://your-worker.workers.dev').origin}/api/webhook/${jobId}`;
 
-        // Call RunPod API
+        // Call RunPod API with full Gaussian Splatting parameters
         const response = await fetch(
             `https://api.runpod.ai/v2/${env.RUNPOD_ENDPOINT_ID}/run`,
             {
@@ -711,9 +730,32 @@ async function triggerRunPodProcessing(jobId: string, projectId: string, photos:
                     input: {
                         project_id: projectId,
                         image_urls: imageUrls,
-                        iterations: iterations,
                         upload_url: uploadUrl,
                         webhook_url: webhookUrl,
+                        // Gaussian Splatting parameters
+                        params: {
+                            iterations: params.iterations,
+                            position_lr_init: params.position_lr_init,
+                            position_lr_final: params.position_lr_final,
+                            position_lr_delay_mult: params.position_lr_delay_mult,
+                            position_lr_max_steps: params.position_lr_max_steps,
+                            feature_lr: params.feature_lr,
+                            opacity_lr: params.opacity_lr,
+                            scaling_lr: params.scaling_lr,
+                            rotation_lr: params.rotation_lr,
+                            sh_degree: params.sh_degree,
+                            percent_dense: params.percent_dense,
+                            densification_interval: params.densification_interval,
+                            opacity_reset_interval: params.opacity_reset_interval,
+                            densify_from_iter: params.densify_from_iter,
+                            densify_until_iter: params.densify_until_iter,
+                            densify_grad_threshold: params.densify_grad_threshold,
+                            white_background: params.white_background,
+                            resolution_scales: params.resolution_scales,
+                            lambda_dssim: params.lambda_dssim,
+                            save_iterations: params.save_iterations,
+                            test_iterations: params.test_iterations
+                        }
                     },
                 }),
             }
@@ -730,7 +772,7 @@ async function triggerRunPodProcessing(jobId: string, projectId: string, photos:
             'UPDATE jobs SET external_id = ?, status = ? WHERE id = ?'
         ).bind(data.id, 'processing', jobId).run();
 
-        console.log(`RunPod job started: ${data.id}`);
+        console.log(`RunPod job started: ${data.id} with params:`, params);
 
     } catch (error) {
         console.error('RunPod trigger error:', error);

@@ -58,6 +58,9 @@ async function initDB() {
     });
 }
 
+// Custom Parameters Storage
+let customParams = {};
+
 // Quality Presets Management
 async function loadQualityPresets() {
     try {
@@ -164,6 +167,173 @@ function selectQualityPreset(presetId) {
     if (photoCount >= 5) {
         updatePriceEstimate(photoCount, 'RTX_4090', presetId);
     }
+
+    // Update advanced settings panels
+    populateAdvancedSettings(presetId);
+}
+
+/**
+ * Populate advanced settings panel with parameter controls
+ */
+function populateAdvancedSettings(presetId) {
+    const preset = qualityPresets.find(p => p.id === presetId);
+    if (!preset || !preset.params) return;
+
+    // Reset custom params when preset changes
+    customParams = {};
+
+    const params = preset.params;
+
+    // Define parameter groups for better organization
+    const paramGroups = [
+        {
+            title: 'Training Parameters',
+            params: [
+                { key: 'iterations', label: 'Iterations', type: 'number', min: 1000, max: 100000, step: 1000 },
+                { key: 'position_lr_init', label: 'Position Learning Rate (Initial)', type: 'number', min: 0.00001, max: 0.01, step: 0.00001, format: 'scientific' },
+                { key: 'position_lr_final', label: 'Position Learning Rate (Final)', type: 'number', min: 0.0000001, max: 0.001, step: 0.0000001, format: 'scientific' },
+                { key: 'feature_lr', label: 'Feature Learning Rate', type: 'number', min: 0.0001, max: 0.01, step: 0.0001 },
+                { key: 'opacity_lr', label: 'Opacity Learning Rate', type: 'number', min: 0.001, max: 0.5, step: 0.001 },
+                { key: 'scaling_lr', label: 'Scaling Learning Rate', type: 'number', min: 0.0001, max: 0.05, step: 0.0001 },
+                { key: 'rotation_lr', label: 'Rotation Learning Rate', type: 'number', min: 0.0001, max: 0.01, step: 0.0001 }
+            ]
+        },
+        {
+            title: 'Densification Settings',
+            params: [
+                { key: 'densification_interval', label: 'Densification Interval', type: 'number', min: 10, max: 1000, step: 10 },
+                { key: 'opacity_reset_interval', label: 'Opacity Reset Interval', type: 'number', min: 1000, max: 10000, step: 100 },
+                { key: 'densify_from_iter', label: 'Densify From Iteration', type: 'number', min: 0, max: 5000, step: 100 },
+                { key: 'densify_until_iter', label: 'Densify Until Iteration', type: 'number', min: 1000, max: 50000, step: 1000 },
+                { key: 'densify_grad_threshold', label: 'Densification Gradient Threshold', type: 'number', min: 0.00001, max: 0.001, step: 0.00001, format: 'scientific' },
+                { key: 'percent_dense', label: 'Percent Dense', type: 'number', min: 0.001, max: 0.1, step: 0.001 }
+            ]
+        },
+        {
+            title: 'Rendering & Quality',
+            params: [
+                { key: 'sh_degree', label: 'Spherical Harmonics Degree', type: 'number', min: 0, max: 4, step: 1 },
+                { key: 'lambda_dssim', label: 'DSSIM Loss Weight', type: 'number', min: 0, max: 1, step: 0.05 },
+                { key: 'white_background', label: 'White Background', type: 'checkbox' }
+            ]
+        }
+    ];
+
+    // Populate both panels (capture and upload)
+    ['capture', 'upload'].forEach(mode => {
+        const container = document.getElementById(`advanced-params-${mode}`);
+        if (!container) return;
+
+        container.innerHTML = '';
+
+        paramGroups.forEach(group => {
+            const groupDiv = document.createElement('div');
+            groupDiv.className = 'param-group';
+
+            groupDiv.innerHTML = `<div class="param-group-title">${group.title}</div>`;
+
+            group.params.forEach(paramDef => {
+                const value = params[paramDef.key];
+                const control = createParameterControl(paramDef, value, mode);
+                groupDiv.appendChild(control);
+            });
+
+            container.appendChild(groupDiv);
+        });
+    });
+}
+
+/**
+ * Create a parameter control element
+ */
+function createParameterControl(paramDef, defaultValue, mode) {
+    const controlDiv = document.createElement('div');
+    controlDiv.className = 'param-control';
+
+    if (paramDef.type === 'checkbox') {
+        controlDiv.innerHTML = `
+            <div class="param-checkbox-wrapper">
+                <input type="checkbox"
+                    class="param-checkbox"
+                    id="param-${paramDef.key}-${mode}"
+                    ${defaultValue ? 'checked' : ''}
+                    data-param-key="${paramDef.key}">
+                <label for="param-${paramDef.key}-${mode}" class="param-label" style="margin-bottom: 0;">
+                    ${paramDef.label}
+                </label>
+            </div>
+            <div class="param-description">${getParamDescription(paramDef.key)}</div>
+        `;
+    } else {
+        const displayValue = paramDef.format === 'scientific'
+            ? defaultValue.toExponential(6)
+            : defaultValue;
+
+        controlDiv.innerHTML = `
+            <div class="param-label">
+                <span>${paramDef.label}</span>
+                <span class="param-value" id="param-value-${paramDef.key}-${mode}">${displayValue}</span>
+            </div>
+            <input type="number"
+                class="param-input"
+                id="param-${paramDef.key}-${mode}"
+                value="${defaultValue}"
+                min="${paramDef.min}"
+                max="${paramDef.max}"
+                step="${paramDef.step}"
+                data-param-key="${paramDef.key}"
+                data-format="${paramDef.format || 'number'}">
+            <div class="param-description">${getParamDescription(paramDef.key)}</div>
+        `;
+    }
+
+    // Add event listener
+    const input = controlDiv.querySelector(`#param-${paramDef.key}-${mode}`);
+    if (input) {
+        input.addEventListener('input', (e) => {
+            const key = e.target.dataset.paramKey;
+            const value = paramDef.type === 'checkbox' ? e.target.checked : parseFloat(e.target.value);
+            customParams[key] = value;
+
+            // Update display value
+            if (paramDef.type !== 'checkbox') {
+                const valueDisplay = controlDiv.querySelector(`#param-value-${paramDef.key}-${mode}`);
+                if (valueDisplay) {
+                    valueDisplay.textContent = paramDef.format === 'scientific'
+                        ? value.toExponential(6)
+                        : value;
+                }
+            }
+        });
+    }
+
+    return controlDiv;
+}
+
+/**
+ * Get parameter description
+ */
+function getParamDescription(paramKey) {
+    const descriptions = {
+        iterations: 'Total number of training iterations',
+        position_lr_init: 'Initial learning rate for Gaussian positions',
+        position_lr_final: 'Final learning rate for Gaussian positions',
+        feature_lr: 'Learning rate for Gaussian features (colors)',
+        opacity_lr: 'Learning rate for Gaussian opacity',
+        scaling_lr: 'Learning rate for Gaussian scales',
+        rotation_lr: 'Learning rate for Gaussian rotations',
+        sh_degree: 'Spherical harmonics degree (0-4) - higher = better view-dependent effects',
+        densification_interval: 'Iterations between densification operations',
+        opacity_reset_interval: 'Iterations between opacity resets',
+        densify_from_iter: 'Iteration to start densification',
+        densify_until_iter: 'Iteration to stop densification',
+        densify_grad_threshold: 'Gradient threshold for densification',
+        percent_dense: 'Percentage of scene extent to consider dense',
+        white_background: 'Use white background instead of black',
+        lambda_dssim: 'Weight for DSSIM loss (0-1, higher = more structure preservation)'
+    };
+
+    return descriptions[paramKey] || '';
 }
 
 // Tab navigation
@@ -270,14 +440,16 @@ function stopCamera() {
 function updatePhotoCount() {
     document.getElementById('photo-count').textContent = capturedPhotos.length;
 
-    // Show quality selector and metadata inputs when enough photos
+    // Show quality selector, metadata inputs, and advanced settings when enough photos
     if (capturedPhotos.length >= 5) {
         document.getElementById('quality-selector-capture').style.display = 'block';
         document.getElementById('project-metadata-capture').style.display = 'block';
+        document.getElementById('advanced-settings-capture').style.display = 'block';
         updatePriceEstimate(capturedPhotos.length, 'RTX_4090', selectedQuality);
     } else {
         document.getElementById('quality-selector-capture').style.display = 'none';
         document.getElementById('project-metadata-capture').style.display = 'none';
+        document.getElementById('advanced-settings-capture').style.display = 'none';
     }
 }
 
@@ -551,14 +723,16 @@ async function handleFiles(files) {
         fileList.appendChild(fileItem);
     });
 
-    // Show quality selector and metadata inputs when enough files
+    // Show quality selector, metadata inputs, and advanced settings when enough files
     if (files.length >= 5) {
         document.getElementById('quality-selector').style.display = 'block';
         document.getElementById('project-metadata-upload').style.display = 'block';
+        document.getElementById('advanced-settings-upload').style.display = 'block';
         updatePriceEstimate(files.length, 'RTX_4090', selectedQuality);
     } else {
         document.getElementById('quality-selector').style.display = 'none';
         document.getElementById('project-metadata-upload').style.display = 'none';
+        document.getElementById('advanced-settings-upload').style.display = 'none';
     }
 
     document.getElementById('upload-btn').style.display = files.length > 0 ? 'inline-block' : 'none';
@@ -653,13 +827,20 @@ async function saveProject(projectData, name = '', tags = '') {
 
 async function startProcessing(projectId) {
     try {
+        const requestBody = {
+            projectId,
+            qualityPreset: selectedQuality
+        };
+
+        // Include custom parameters if any were set
+        if (Object.keys(customParams).length > 0) {
+            requestBody.customParams = customParams;
+        }
+
         const response = await fetch(`${API_ENDPOINT}/process`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                projectId,
-                qualityPreset: selectedQuality
-            })
+            body: JSON.stringify(requestBody)
         });
 
         if (!response.ok) {

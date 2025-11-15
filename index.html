@@ -596,6 +596,162 @@
             color: #a8b2d1;
         }
 
+        /* Advanced Settings */
+        .advanced-settings-panel {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 15px;
+            margin-top: 20px;
+        }
+
+        .advanced-settings-header {
+            color: #667eea;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            user-select: none;
+            list-style: none;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .advanced-settings-header::-webkit-details-marker {
+            display: none;
+        }
+
+        .advanced-settings-header::before {
+            content: '▶';
+            transition: transform 0.3s ease;
+            display: inline-block;
+        }
+
+        .advanced-settings-panel[open] .advanced-settings-header::before {
+            transform: rotate(90deg);
+        }
+
+        .advanced-settings-content {
+            margin-top: 20px;
+        }
+
+        .param-group {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+
+        .param-group-title {
+            color: #a8b2d1;
+            font-size: 0.9rem;
+            font-weight: 600;
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .param-control {
+            margin-bottom: 15px;
+        }
+
+        .param-control:last-child {
+            margin-bottom: 0;
+        }
+
+        .param-label {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+            color: #fff;
+            font-size: 0.875rem;
+        }
+
+        .param-value {
+            color: #667eea;
+            font-weight: 600;
+            font-size: 0.85rem;
+        }
+
+        .param-input {
+            width: 100%;
+            padding: 8px 12px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 8px;
+            color: #fff;
+            font-size: 0.875rem;
+            transition: all 0.3s ease;
+        }
+
+        .param-input:focus {
+            outline: none;
+            border-color: #667eea;
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .param-range {
+            width: 100%;
+            height: 6px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+            outline: none;
+            -webkit-appearance: none;
+        }
+
+        .param-range::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            background: #667eea;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .param-range::-webkit-slider-thumb:hover {
+            background: #7c8ef0;
+            transform: scale(1.1);
+        }
+
+        .param-range::-moz-range-thumb {
+            width: 18px;
+            height: 18px;
+            background: #667eea;
+            border: none;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .param-range::-moz-range-thumb:hover {
+            background: #7c8ef0;
+            transform: scale(1.1);
+        }
+
+        .param-description {
+            color: #a8b2d1;
+            font-size: 0.75rem;
+            margin-top: 4px;
+            font-style: italic;
+        }
+
+        .param-checkbox-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .param-checkbox {
+            width: 20px;
+            height: 20px;
+            accent-color: #667eea;
+            cursor: pointer;
+        }
+
         .projects-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
@@ -956,6 +1112,14 @@
                         </div>
                     </div>
 
+                    <!-- Advanced Settings for Capture -->
+                    <div id="advanced-settings-capture" style="display: none; margin: 20px 0;">
+                        <details class="advanced-settings-panel">
+                            <summary class="advanced-settings-header">Advanced Settings</summary>
+                            <div class="advanced-settings-content" id="advanced-params-capture"></div>
+                        </details>
+                    </div>
+
                     <button class="btn" id="process-captures" style="display: none;">Process Reconstruction</button>
                 </div>
             </div>
@@ -995,6 +1159,14 @@
                                 Tags help organize and find your projects later
                             </small>
                         </div>
+                    </div>
+
+                    <!-- Advanced Settings for Upload -->
+                    <div id="advanced-settings-upload" style="display: none; margin: 20px 0;">
+                        <details class="advanced-settings-panel">
+                            <summary class="advanced-settings-header">Advanced Settings</summary>
+                            <div class="advanced-settings-content" id="advanced-params-upload"></div>
+                        </details>
                     </div>
 
                     <button class="btn" id="upload-btn" style="display: none;">Upload & Process</button>
