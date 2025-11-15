@@ -932,6 +932,7 @@
         }
 
         .project-card {
+            position: relative;
             background: rgba(255, 255, 255, 0.05);
             border-radius: 15px;
             padding: 20px;
@@ -1964,6 +1965,24 @@
                                 <option value="oldest">Oldest First</option>
                                 <option value="name">Name (A-Z)</option>
                             </select>
+                            <button id="toggle-select-mode" class="filter-select" style="background: rgba(255, 255, 255, 0.05); padding: 8px 16px; cursor: pointer;">
+                                Select Multiple
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Bulk Actions Bar (hidden by default) -->
+                    <div id="bulk-actions-bar" style="display: none; margin: 15px 0; padding: 15px; background: rgba(255, 255, 255, 0.05); border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.1);">
+                        <div style="display: flex; align-items: center; justify-content: space-between;">
+                            <span id="selected-count" style="color: #a8b2d1;">0 projects selected</span>
+                            <div style="display: flex; gap: 10px;">
+                                <button id="bulk-delete-btn" style="padding: 8px 16px; background: rgba(248, 113, 113, 0.2); border: 1px solid #f87171; color: #f87171; border-radius: 8px; cursor: pointer;">
+                                    Delete Selected
+                                </button>
+                                <button id="cancel-select-mode" style="padding: 8px 16px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.2); color: #fff; border-radius: 8px; cursor: pointer;">
+                                    Cancel
+                                </button>
+                            </div>
                         </div>
                     </div>
 

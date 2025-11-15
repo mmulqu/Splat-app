@@ -21,6 +21,10 @@ let allProjects = [];
 // Current user
 let currentUser = null;
 
+// Bulk selection state
+let selectMode = false;
+let selectedProjects = new Set();
+
 async function initDB() {
     db = await openDB('SplatAppDB', 3, {
         upgrade(db, oldVersion) {
@@ -999,6 +1003,15 @@ async function loadProjects() {
         const visibilityColor = isPublic ? '#4ade80' : '#a8b2d1';
 
         card.innerHTML = `
+            ${selectMode ? `
+                <div style="position: absolute; top: 10px; left: 10px; z-index: 10;">
+                    <input type="checkbox"
+                        data-project-id="${project.id}"
+                        ${selectedProjects.has(project.id) ? 'checked' : ''}
+                        style="width: 20px; height: 20px; cursor: pointer;"
+                    />
+                </div>
+            ` : ''}
             <div class="project-thumbnail"></div>
             <h3>${projectName}</h3>
             <p style="color: #a8b2d1; font-size: 0.9rem;">
@@ -1007,7 +1020,14 @@ async function loadProjects() {
             <p style="color: ${statusColor}; font-size: 0.9rem;">
                 Status: ${project.status}
             </p>
-            ${currentUser ? `
+            ${project.status === 'failed' && project.error ? `
+                <div style="margin-top: 8px; padding: 8px; background: rgba(248, 113, 113, 0.1); border: 1px solid rgba(248, 113, 113, 0.3); border-radius: 6px;">
+                    <p style="color: #f87171; font-size: 0.8rem; margin: 0;">
+                        ⚠️ ${project.error}
+                    </p>
+                </div>
+            ` : ''}
+            ${currentUser && !selectMode ? `
                 <div class="project-visibility">
                     <span style="color: ${visibilityColor}; font-size: 0.85rem;">
                         ${visibilityIcon} ${visibilityText}
@@ -1068,6 +1088,15 @@ async function loadProjects() {
             cancelBtn.addEventListener('click', async (e) => {
                 e.stopPropagation();
                 await cancelJob(project.id, projectName);
+            });
+        }
+
+        // Add checkbox handler for bulk selection
+        const checkbox = card.querySelector('input[type="checkbox"]');
+        if (checkbox) {
+            checkbox.addEventListener('change', (e) => {
+                e.stopPropagation();
+                toggleProjectSelection(project.id);
             });
         }
 
@@ -1179,6 +1208,130 @@ function setupProjectFilters() {
         currentSortOrder = e.target.value;
         loadProjects();
     });
+
+    // Bulk selection mode
+    const toggleSelectBtn = document.getElementById('toggle-select-mode');
+    toggleSelectBtn?.addEventListener('click', toggleSelectMode);
+
+    const cancelSelectBtn = document.getElementById('cancel-select-mode');
+    cancelSelectBtn?.addEventListener('click', exitSelectMode);
+
+    const bulkDeleteBtn = document.getElementById('bulk-delete-btn');
+    bulkDeleteBtn?.addEventListener('click', bulkDeleteProjects);
+}
+
+function toggleSelectMode() {
+    selectMode = !selectMode;
+    selectedProjects.clear();
+    updateBulkActionsBar();
+    loadProjects(); // Reload to show/hide checkboxes
+}
+
+function exitSelectMode() {
+    selectMode = false;
+    selectedProjects.clear();
+    updateBulkActionsBar();
+    loadProjects();
+}
+
+function toggleProjectSelection(projectId) {
+    if (selectedProjects.has(projectId)) {
+        selectedProjects.delete(projectId);
+    } else {
+        selectedProjects.add(projectId);
+    }
+    updateBulkActionsBar();
+    updateProjectCheckbox(projectId);
+}
+
+function updateProjectCheckbox(projectId) {
+    const checkbox = document.querySelector(`input[data-project-id="${projectId}"]`);
+    if (checkbox) {
+        checkbox.checked = selectedProjects.has(projectId);
+    }
+}
+
+function updateBulkActionsBar() {
+    const bar = document.getElementById('bulk-actions-bar');
+    const count = document.getElementById('selected-count');
+    const toggleBtn = document.getElementById('toggle-select-mode');
+
+    if (selectMode) {
+        bar.style.display = 'block';
+        count.textContent = `${selectedProjects.size} project${selectedProjects.size !== 1 ? 's' : ''} selected`;
+        toggleBtn.textContent = 'Exit Select Mode';
+    } else {
+        bar.style.display = 'none';
+        toggleBtn.textContent = 'Select Multiple';
+    }
+}
+
+async function bulkDeleteProjects() {
+    if (selectedProjects.size === 0) {
+        showStatus('No projects selected', 'error');
+        return;
+    }
+
+    const count = selectedProjects.size;
+    if (!confirm(`Are you sure you want to delete ${count} project${count !== 1 ? 's' : ''}?\n\nThis will permanently delete:\n- All uploaded photos\n- All 3D models\n- All project data\n\nThis action cannot be undone!`)) {
+        return;
+    }
+
+    try {
+        showStatus(`Deleting ${count} projects...`, 'info');
+
+        const projectIds = Array.from(selectedProjects);
+        let successCount = 0;
+        let failCount = 0;
+
+        for (const projectId of projectIds) {
+            try {
+                // Delete from server
+                const response = await fetch(`${API_ENDPOINT}/projects/${projectId}`, {
+                    method: 'DELETE',
+                    credentials: 'include',
+                });
+
+                if (!response.ok) {
+                    throw new Error('Server delete failed');
+                }
+
+                // Delete from IndexedDB
+                await db.delete('projects', projectId);
+
+                // Delete associated photos
+                const tx = db.transaction(['photos'], 'readwrite');
+                const photoStore = tx.objectStore('photos');
+                const index = photoStore.index('projectId');
+                const photosToDelete = await index.getAllKeys(projectId);
+
+                for (const key of photosToDelete) {
+                    await photoStore.delete(key);
+                }
+                await tx.done;
+
+                successCount++;
+            } catch (error) {
+                console.error(`Failed to delete project ${projectId}:`, error);
+                failCount++;
+            }
+        }
+
+        // Exit select mode and reload
+        selectedProjects.clear();
+        exitSelectMode();
+        await loadProjects();
+
+        if (failCount === 0) {
+            showStatus(`Successfully deleted ${successCount} project${successCount !== 1 ? 's' : ''}`, 'success');
+        } else {
+            showStatus(`Deleted ${successCount} projects, ${failCount} failed`, 'error');
+        }
+
+    } catch (error) {
+        console.error('Bulk delete error:', error);
+        showStatus('Bulk delete failed', 'error');
+    }
 }
 
 function showStatus(message, type = 'info') {

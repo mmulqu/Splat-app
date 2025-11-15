@@ -994,7 +994,39 @@ async function handleDeleteProject(projectId: string, request: Request, env: Env
 }
 
 /**
- * Trigger RunPod GPU processing
+ * Helper function for retry with exponential backoff
+ */
+async function retryWithBackoff<T>(
+    fn: () => Promise<T>,
+    maxRetries: number = 3,
+    baseDelay: number = 1000
+): Promise<T> {
+    let lastError: any;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+            return await fn();
+        } catch (error: any) {
+            lastError = error;
+
+            // Don't retry on client errors (4xx) - only server errors (5xx) or network errors
+            if (error.status && error.status >= 400 && error.status < 500) {
+                throw error;
+            }
+
+            if (attempt < maxRetries) {
+                const delay = baseDelay * Math.pow(2, attempt);
+                console.log(`Retry attempt ${attempt + 1}/${maxRetries} after ${delay}ms...`);
+                await new Promise(resolve => setTimeout(resolve, delay));
+            }
+        }
+    }
+
+    throw lastError;
+}
+
+/**
+ * Trigger RunPod GPU processing with retry mechanism
  */
 async function triggerRunPodProcessing(jobId: string, projectId: string, photos: any[], env: Env, params: GaussianSplattingParams) {
     try {
@@ -1018,55 +1050,60 @@ async function triggerRunPodProcessing(jobId: string, projectId: string, photos:
         // Get the worker base URL for webhook
         const webhookUrl = `${new URL(env.WORKER_URL || 'https://your-worker.workers.dev').origin}/api/webhook/${jobId}`;
 
-        // Call RunPod API with full Gaussian Splatting parameters
-        const response = await fetch(
-            `https://api.runpod.ai/v2/${env.RUNPOD_ENDPOINT_ID}/run`,
-            {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${env.RUNPOD_API_KEY}`,
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    input: {
-                        project_id: projectId,
-                        image_urls: imageUrls,
-                        upload_url: uploadUrl,
-                        webhook_url: webhookUrl,
-                        // Gaussian Splatting parameters
-                        params: {
-                            iterations: params.iterations,
-                            position_lr_init: params.position_lr_init,
-                            position_lr_final: params.position_lr_final,
-                            position_lr_delay_mult: params.position_lr_delay_mult,
-                            position_lr_max_steps: params.position_lr_max_steps,
-                            feature_lr: params.feature_lr,
-                            opacity_lr: params.opacity_lr,
-                            scaling_lr: params.scaling_lr,
-                            rotation_lr: params.rotation_lr,
-                            sh_degree: params.sh_degree,
-                            percent_dense: params.percent_dense,
-                            densification_interval: params.densification_interval,
-                            opacity_reset_interval: params.opacity_reset_interval,
-                            densify_from_iter: params.densify_from_iter,
-                            densify_until_iter: params.densify_until_iter,
-                            densify_grad_threshold: params.densify_grad_threshold,
-                            white_background: params.white_background,
-                            resolution_scales: params.resolution_scales,
-                            lambda_dssim: params.lambda_dssim,
-                            save_iterations: params.save_iterations,
-                            test_iterations: params.test_iterations
-                        }
+        // Call RunPod API with retry logic for transient failures
+        const data: any = await retryWithBackoff(async () => {
+            const response = await fetch(
+                `https://api.runpod.ai/v2/${env.RUNPOD_ENDPOINT_ID}/run`,
+                {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${env.RUNPOD_API_KEY}`,
+                        'Content-Type': 'application/json',
                     },
-                }),
+                    body: JSON.stringify({
+                        input: {
+                            project_id: projectId,
+                            image_urls: imageUrls,
+                            upload_url: uploadUrl,
+                            webhook_url: webhookUrl,
+                            // Gaussian Splatting parameters
+                            params: {
+                                iterations: params.iterations,
+                                position_lr_init: params.position_lr_init,
+                                position_lr_final: params.position_lr_final,
+                                position_lr_delay_mult: params.position_lr_delay_mult,
+                                position_lr_max_steps: params.position_lr_max_steps,
+                                feature_lr: params.feature_lr,
+                                opacity_lr: params.opacity_lr,
+                                scaling_lr: params.scaling_lr,
+                                rotation_lr: params.rotation_lr,
+                                sh_degree: params.sh_degree,
+                                percent_dense: params.percent_dense,
+                                densification_interval: params.densification_interval,
+                                opacity_reset_interval: params.opacity_reset_interval,
+                                densify_from_iter: params.densify_from_iter,
+                                densify_until_iter: params.densify_until_iter,
+                                densify_grad_threshold: params.densify_grad_threshold,
+                                white_background: params.white_background,
+                                resolution_scales: params.resolution_scales,
+                                lambda_dssim: params.lambda_dssim,
+                                save_iterations: params.save_iterations,
+                                test_iterations: params.test_iterations
+                            }
+                        },
+                    }),
+                }
+            );
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                const error: any = new Error(`RunPod API error: ${response.status} ${response.statusText} - ${errorText}`);
+                error.status = response.status;
+                throw error;
             }
-        );
 
-        if (!response.ok) {
-            throw new Error(`RunPod API error: ${response.statusText}`);
-        }
-
-        const data: any = await response.json();
+            return await response.json();
+        }, 3, 1000); // 3 retries with 1s base delay
 
         // Update job with RunPod job ID
         await env.SPLAT_DB.prepare(
@@ -1075,11 +1112,54 @@ async function triggerRunPodProcessing(jobId: string, projectId: string, photos:
 
         console.log(`RunPod job started: ${data.id} with params:`, params);
 
-    } catch (error) {
+    } catch (error: any) {
         console.error('RunPod trigger error:', error);
+
+        // Provide detailed error message to user
+        let errorMessage = 'Processing failed to start';
+        if (error.status === 401 || error.status === 403) {
+            errorMessage = 'GPU service authentication failed. Please contact support.';
+        } else if (error.status === 429) {
+            errorMessage = 'GPU service is busy. Please try again in a few minutes.';
+        } else if (error.status >= 500) {
+            errorMessage = 'GPU service is temporarily unavailable. Please try again later.';
+        } else if (error.message) {
+            errorMessage = error.message;
+        }
+
         await env.SPLAT_DB.prepare(
             'UPDATE jobs SET status = ?, error = ? WHERE id = ?'
-        ).bind('failed', String(error), jobId).run();
+        ).bind('failed', errorMessage, jobId).run();
+
+        // Update project with error
+        await env.SPLAT_DB.prepare(
+            'UPDATE projects SET status = ?, error = ? WHERE id = ?'
+        ).bind('failed', errorMessage, projectId).run();
+
+        // Refund credits since job failed to start
+        const job = await env.SPLAT_DB.prepare(
+            'SELECT j.*, p.user_id FROM jobs j JOIN projects p ON j.project_id = p.id WHERE j.id = ?'
+        ).bind(jobId).first<any>();
+
+        if (job && job.credits_cost > 0 && job.user_id) {
+            await env.SPLAT_DB.prepare(
+                'UPDATE users SET credits = credits + ? WHERE id = ?'
+            ).bind(job.credits_cost, job.user_id).run();
+
+            await env.SPLAT_DB.prepare(
+                `INSERT INTO transactions (
+                    id, user_id, type, amount, credits, description, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)`
+            ).bind(
+                crypto.randomUUID(),
+                job.user_id,
+                'refund',
+                0,
+                job.credits_cost,
+                `Job ${jobId} failed to start - automatic refund`,
+                Date.now()
+            ).run();
+        }
     }
 }
 
@@ -1181,15 +1261,65 @@ async function handleWebhook(jobId: string, request: Request, env: Env, corsHead
             }
 
         } else if (payload.status === 'failed') {
+            // Get job details for refund
+            const job = await env.SPLAT_DB.prepare(
+                'SELECT j.*, p.user_id FROM jobs j JOIN projects p ON j.project_id = p.id WHERE j.id = ?'
+            ).bind(jobId).first<any>();
+
             await env.SPLAT_DB.prepare(
                 'UPDATE jobs SET status = ?, error = ? WHERE id = ?'
             ).bind('failed', payload.error || 'Unknown error', jobId).run();
 
             if (payload.project_id) {
                 await env.SPLAT_DB.prepare(
-                    'UPDATE projects SET status = ? WHERE id = ?'
-                ).bind('failed', payload.project_id).run();
+                    'UPDATE projects SET status = ?, error = ? WHERE id = ?'
+                ).bind('failed', payload.error || 'Processing failed', payload.project_id).run();
             }
+
+            // Auto-refund credits for failed jobs
+            if (job && job.credits_cost > 0 && job.user_id) {
+                try {
+                    // Refund credits
+                    await env.SPLAT_DB.prepare(
+                        'UPDATE users SET credits = credits + ? WHERE id = ?'
+                    ).bind(job.credits_cost, job.user_id).run();
+
+                    // Record refund transaction
+                    await env.SPLAT_DB.prepare(
+                        `INSERT INTO transactions (
+                            id, user_id, type, amount, credits, description, created_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?)`
+                    ).bind(
+                        crypto.randomUUID(),
+                        job.user_id,
+                        'refund',
+                        0,
+                        job.credits_cost,
+                        `Job ${jobId} failed - automatic refund`,
+                        Date.now()
+                    ).run();
+
+                    console.log(`Auto-refunded ${job.credits_cost} credits for failed job ${jobId}`);
+                } catch (error) {
+                    console.error('Failed to refund credits:', error);
+                }
+            }
+
+            // Send failure notification
+            if (payload.project_id) {
+                await sendPushNotification(
+                    env,
+                    payload.project_id,
+                    'Splat App - Processing Failed',
+                    payload.error || 'Your job failed. Credits have been refunded.',
+                    `/?project=${payload.project_id}`
+                );
+            }
+        } else if (payload.status === 'processing') {
+            // Update progress
+            await env.SPLAT_DB.prepare(
+                'UPDATE jobs SET progress = ? WHERE id = ?'
+            ).bind(payload.progress || 0, jobId).run();
         }
 
         return jsonResponse({ success: true }, 200, corsHeaders);
