@@ -659,12 +659,99 @@ function hidePriceEstimate() {
 }
 
 // Service Worker registration
+let swRegistration = null;
+
 if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js')
-            .then(reg => console.log('Service Worker registered'))
-            .catch(err => console.error('Service Worker registration failed:', err));
+    window.addEventListener('load', async () => {
+        try {
+            swRegistration = await navigator.serviceWorker.register('/sw.js');
+            console.log('Service Worker registered');
+
+            // Request notification permission after SW is registered
+            await requestNotificationPermission();
+        } catch (err) {
+            console.error('Service Worker registration failed:', err);
+        }
     });
+}
+
+// Push Notification Support
+async function requestNotificationPermission() {
+    if (!('Notification' in window)) {
+        console.log('This browser does not support notifications');
+        return false;
+    }
+
+    if (Notification.permission === 'granted') {
+        await subscribeToPushNotifications();
+        return true;
+    }
+
+    if (Notification.permission !== 'denied') {
+        const permission = await Notification.requestPermission();
+        if (permission === 'granted') {
+            await subscribeToPushNotifications();
+            return true;
+        }
+    }
+
+    return false;
+}
+
+async function subscribeToPushNotifications() {
+    try {
+        if (!swRegistration) {
+            console.log('Service Worker not registered yet');
+            return;
+        }
+
+        // Check if already subscribed
+        let subscription = await swRegistration.pushManager.getSubscription();
+
+        if (!subscription) {
+            // VAPID public key - in production, this should come from your backend
+            // For now, we'll use a placeholder
+            const vapidPublicKey = 'BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBUYIHBQFLXYp5Nksh8U';
+
+            const convertedVapidKey = urlBase64ToUint8Array(vapidPublicKey);
+
+            subscription = await swRegistration.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: convertedVapidKey
+            });
+        }
+
+        // Send subscription to backend
+        await fetch(`${API_ENDPOINT}/push/subscribe`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                subscription: subscription.toJSON()
+            })
+        });
+
+        console.log('Push notification subscription successful');
+
+    } catch (error) {
+        console.error('Error subscribing to push notifications:', error);
+    }
+}
+
+function urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding)
+        .replace(/\-/g, '+')
+        .replace(/_/g, '/');
+
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+
+    for (let i = 0; i < rawData.length; ++i) {
+        outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
 }
 
 // Initialize app

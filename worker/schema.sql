@@ -46,6 +46,20 @@ CREATE INDEX idx_jobs_project_id ON jobs(project_id);
 CREATE INDEX idx_jobs_status ON jobs(status);
 CREATE INDEX idx_jobs_created_at ON jobs(created_at DESC);
 
+-- Push subscriptions table
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    endpoint TEXT NOT NULL UNIQUE,
+    p256dh_key TEXT NOT NULL,
+    auth_key TEXT NOT NULL,
+    project_id TEXT,
+    created_at INTEGER NOT NULL,
+    last_used_at INTEGER
+);
+
+CREATE INDEX idx_push_subscriptions_project_id ON push_subscriptions(project_id);
+CREATE INDEX idx_push_subscriptions_endpoint ON push_subscriptions(endpoint);
+
 -- Setup instructions:
 -- 1. Create D1 database: wrangler d1 create splat-app-db
 -- 2. Update wrangler.toml with the database_id

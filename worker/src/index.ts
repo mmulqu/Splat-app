@@ -62,6 +62,19 @@ interface WebhookPayload {
     error?: string;
 }
 
+interface PushSubscription {
+    endpoint: string;
+    keys: {
+        p256dh: string;
+        auth: string;
+    };
+}
+
+interface PushSubscribeRequest {
+    subscription: PushSubscription;
+    projectId?: string;
+}
+
 export default {
     async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
         const url = new URL(request.url);
@@ -121,6 +134,15 @@ export default {
             if (path.startsWith('/api/webhook/') && request.method === 'POST') {
                 const jobId = path.split('/').pop();
                 return await handleWebhook(jobId!, request, env, corsHeaders);
+            }
+
+            // Push subscription endpoints
+            if (path === '/api/push/subscribe' && request.method === 'POST') {
+                return await handlePushSubscribe(request, env, corsHeaders);
+            }
+
+            if (path === '/api/push/unsubscribe' && request.method === 'POST') {
+                return await handlePushUnsubscribe(request, env, corsHeaders);
             }
 
             return new Response('Not Found', { status: 404, headers: corsHeaders });
@@ -487,6 +509,15 @@ async function handleWebhook(jobId: string, request: Request, env: Env, corsHead
                 await env.SPLAT_DB.prepare(
                     'UPDATE projects SET status = ?, model_url = ?, completed_at = ? WHERE id = ?'
                 ).bind('completed', payload.model_url, Date.now(), payload.project_id).run();
+
+                // Send push notification
+                await sendPushNotification(
+                    env,
+                    payload.project_id,
+                    'Splat App - Processing Complete! 🎉',
+                    'Your 3D reconstruction is ready to view',
+                    `/?project=${payload.project_id}`
+                );
             }
 
         } else if (payload.status === 'failed') {
@@ -506,6 +537,110 @@ async function handleWebhook(jobId: string, request: Request, env: Env, corsHead
     } catch (error) {
         console.error('Webhook error:', error);
         return jsonResponse({ error: 'Webhook processing failed' }, 500, corsHeaders);
+    }
+}
+
+/**
+ * Handle push subscription registration
+ */
+async function handlePushSubscribe(request: Request, env: Env, corsHeaders: Record<string, string>): Promise<Response> {
+    try {
+        const body = await request.json() as PushSubscribeRequest;
+        const { subscription, projectId } = body;
+
+        if (!subscription || !subscription.endpoint || !subscription.keys) {
+            return jsonResponse({ success: false, error: 'Invalid subscription data' }, 400, corsHeaders);
+        }
+
+        // Store subscription in database
+        await env.SPLAT_DB.prepare(
+            'INSERT OR REPLACE INTO push_subscriptions (endpoint, p256dh_key, auth_key, project_id, created_at) VALUES (?, ?, ?, ?, ?)'
+        ).bind(
+            subscription.endpoint,
+            subscription.keys.p256dh,
+            subscription.keys.auth,
+            projectId || null,
+            Date.now()
+        ).run();
+
+        console.log('Push subscription registered:', subscription.endpoint);
+
+        return jsonResponse({ success: true }, 200, corsHeaders);
+
+    } catch (error) {
+        console.error('Push subscribe error:', error);
+        return jsonResponse({ success: false, error: 'Subscription failed' }, 500, corsHeaders);
+    }
+}
+
+/**
+ * Handle push subscription removal
+ */
+async function handlePushUnsubscribe(request: Request, env: Env, corsHeaders: Record<string, string>): Promise<Response> {
+    try {
+        const body = await request.json() as { endpoint: string };
+
+        if (!body.endpoint) {
+            return jsonResponse({ success: false, error: 'Endpoint required' }, 400, corsHeaders);
+        }
+
+        await env.SPLAT_DB.prepare(
+            'DELETE FROM push_subscriptions WHERE endpoint = ?'
+        ).bind(body.endpoint).run();
+
+        console.log('Push subscription removed:', body.endpoint);
+
+        return jsonResponse({ success: true }, 200, corsHeaders);
+
+    } catch (error) {
+        console.error('Push unsubscribe error:', error);
+        return jsonResponse({ success: false, error: 'Unsubscribe failed' }, 500, corsHeaders);
+    }
+}
+
+/**
+ * Send push notification to subscribers
+ */
+async function sendPushNotification(env: Env, projectId: string, title: string, body: string, url: string = '/') {
+    try {
+        // Get all subscriptions for this project (or all if no specific project)
+        const subscriptions = await env.SPLAT_DB.prepare(
+            'SELECT * FROM push_subscriptions WHERE project_id = ? OR project_id IS NULL'
+        ).bind(projectId).all();
+
+        if (!subscriptions.results || subscriptions.results.length === 0) {
+            console.log('No push subscriptions found for project:', projectId);
+            return;
+        }
+
+        // Web Push requires VAPID keys - these should be set in env
+        // For now, we'll log that notifications would be sent
+        // In production, you'd use web-push library with VAPID keys
+
+        for (const sub of subscriptions.results) {
+            console.log(`Would send push notification to: ${sub.endpoint}`);
+            console.log(`Title: ${title}, Body: ${body}, URL: ${url}`);
+
+            // TODO: In production, use web-push library:
+            // await webpush.sendNotification(
+            //     {
+            //         endpoint: sub.endpoint,
+            //         keys: {
+            //             p256dh: sub.p256dh_key,
+            //             auth: sub.auth_key
+            //         }
+            //     },
+            //     JSON.stringify({ title, body, url })
+            // );
+
+            // Update last_used_at
+            await env.SPLAT_DB.prepare(
+                'UPDATE push_subscriptions SET last_used_at = ? WHERE id = ?'
+            ).bind(Date.now(), sub.id).run();
+        }
+
+    } catch (error) {
+        console.error('Send push notification error:', error);
     }
 }
 
