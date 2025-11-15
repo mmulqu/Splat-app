@@ -1,5 +1,5 @@
 import { openDB } from 'idb';
-import { optimizeImage, batchOptimizeImages, calculateSavings, formatBytes, detectBlur, getBlurStatistics } from './image-utils.js';
+import { optimizeImage, batchOptimizeImages, calculateSavings, formatBytes, detectBlur, getBlurStatistics, detectDuplicates, removeDuplicates } from './image-utils.js';
 
 // Configuration
 const API_ENDPOINT = import.meta.env.VITE_API_ENDPOINT || '/api';
@@ -432,6 +432,18 @@ async function handleFiles(files) {
         }))
     );
 
+    // Detect duplicates
+    optimizationStatus.innerHTML = `
+        <div class="optimization-progress">
+            <div class="optimization-text">Checking for duplicates...</div>
+            <div class="optimization-bar">
+                <div class="optimization-fill" style="width: 100%;"></div>
+            </div>
+        </div>
+    `;
+
+    const duplicateResults = await detectDuplicates(optimizedFiles);
+
     // Calculate statistics
     const savings = calculateSavings(optimizationResults);
     const blurStats = getBlurStatistics(blurResults);
@@ -446,6 +458,9 @@ async function handleFiles(files) {
     const blurWarningClass = blurStats.blurry > 0 ? 'blur-warning' : 'blur-success';
     const blurIcon = blurStats.blurry > 0 ? '⚠️' : '✅';
 
+    const duplicateWarningClass = duplicateResults.hasDuplicates ? 'blur-warning' : 'blur-success';
+    const duplicateIcon = duplicateResults.hasDuplicates ? '⚠️' : '✅';
+
     statsInfo.innerHTML = `
         <div class="optimization-success">
             ${savings.totalSavings > 0 ? `✅ Optimized: Saved ${formatBytes(savings.totalSavings)} (${savings.savingsPercent}% reduction)` : '✅ Images ready'}
@@ -454,14 +469,23 @@ async function handleFiles(files) {
             ${blurIcon} Quality: ${blurStats.sharp} sharp, ${blurStats.acceptable} acceptable${blurStats.blurry > 0 ? `, ${blurStats.blurry} blurry` : ''}
         </div>
         ${blurStats.blurry > 0 ? `<div class="blur-recommendation">${blurStats.recommendation}</div>` : ''}
+        <div class="${duplicateWarningClass}" style="margin-top: 8px;">
+            ${duplicateIcon} ${duplicateResults.recommendation}
+        </div>
     `;
     fileList.appendChild(statsInfo);
 
-    // Show file list with blur indicators
+    // Show file list with blur and duplicate indicators
     blurResults.forEach((result, index) => {
         const fileItem = document.createElement('div');
         const isBlurry = result.blur.isBlurry;
-        fileItem.className = `file-item ${isBlurry ? 'file-item-blurry' : ''}`;
+        const isDuplicate = duplicateResults.duplicateIndices.includes(index);
+
+        let itemClass = 'file-item';
+        if (isBlurry) itemClass += ' file-item-blurry';
+        if (isDuplicate) itemClass += ' file-item-duplicate';
+
+        fileItem.className = itemClass;
 
         const original = result.optimization.metadata.original;
         const optimized = result.optimization.metadata.optimized;
@@ -471,13 +495,19 @@ async function handleFiles(files) {
         const qualityColor = result.blur.quality === 'sharp' ? '#4ade80' :
                             result.blur.quality === 'acceptable' ? '#facc15' : '#f87171';
 
+        // Find if this file is part of a duplicate pair
+        const duplicatePair = duplicateResults.duplicatePairs.find(
+            pair => pair.index1 === index || pair.index2 === index
+        );
+
         fileItem.innerHTML = `
-            <span>${result.file.name}</span>
+            <span>${result.file.name} ${isDuplicate ? '⚠️ Similar' : ''}</span>
             <div class="file-info">
                 <span class="original-size" style="text-decoration: line-through; color: #888;">${formatBytes(original.size)}</span>
                 <span class="optimized-size" style="color: #4ade80; margin-left: 8px;">${formatBytes(optimized.size)}</span>
                 ${result.optimization.metadata.wasResized ? `<span style="color: #667eea; margin-left: 8px;">📐 Resized</span>` : ''}
                 <span style="color: ${qualityColor}; margin-left: 8px;" title="${result.blur.recommendation}">${qualityIcon} ${result.blur.quality}</span>
+                ${duplicatePair ? `<span style="color: #f87171; margin-left: 8px;" title="Similarity: ${duplicatePair.similarity}%">🔁 ${duplicatePair.similarity}% similar</span>` : ''}
             </div>
         `;
         fileList.appendChild(fileItem);

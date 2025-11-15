@@ -444,3 +444,167 @@ export function getBlurStatistics(results) {
             'All photos look sharp! Ready for processing.'
     };
 }
+
+/**
+ * Calculate perceptual hash of image (simplified difference hash)
+ * @param {File} file - Image file
+ * @returns {Promise<string>} Hash string
+ */
+export async function calculateImageHash(file) {
+    try {
+        const img = await loadImage(file);
+
+        // Create small canvas for hashing (8x8 is standard for dHash)
+        const hashSize = 8;
+        const canvas = document.createElement('canvas');
+        canvas.width = hashSize + 1;
+        canvas.height = hashSize;
+
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, hashSize + 1, hashSize);
+
+        // Get image data
+        const imageData = ctx.getImageData(0, 0, hashSize + 1, hashSize);
+        const data = imageData.data;
+
+        // Convert to grayscale and compute difference hash
+        const gray = [];
+        for (let y = 0; y < hashSize; y++) {
+            for (let x = 0; x < hashSize + 1; x++) {
+                const idx = (y * (hashSize + 1) + x) * 4;
+                const grayValue = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+                gray.push(grayValue);
+            }
+        }
+
+        // Compute horizontal gradient hash
+        let hash = '';
+        for (let y = 0; y < hashSize; y++) {
+            for (let x = 0; x < hashSize; x++) {
+                const idx = y * (hashSize + 1) + x;
+                hash += gray[idx] < gray[idx + 1] ? '1' : '0';
+            }
+        }
+
+        return hash;
+
+    } catch (error) {
+        console.error('Image hash calculation error:', error);
+        return null;
+    }
+}
+
+/**
+ * Calculate Hamming distance between two hash strings
+ * @param {string} hash1 - First hash
+ * @param {string} hash2 - Second hash
+ * @returns {number} Distance (0 = identical, higher = more different)
+ */
+function hammingDistance(hash1, hash2) {
+    if (!hash1 || !hash2 || hash1.length !== hash2.length) {
+        return Infinity;
+    }
+
+    let distance = 0;
+    for (let i = 0; i < hash1.length; i++) {
+        if (hash1[i] !== hash2[i]) {
+            distance++;
+        }
+    }
+    return distance;
+}
+
+/**
+ * Detect duplicate images using perceptual hashing
+ * @param {File[]} files - Array of image files
+ * @param {number} threshold - Hamming distance threshold (default 5 for similar images)
+ * @returns {Promise<Object>} Duplicate detection results
+ */
+export async function detectDuplicates(files, threshold = 5) {
+    try {
+        // Calculate hashes for all images
+        const hashes = await Promise.all(
+            files.map(async (file, index) => ({
+                index,
+                file,
+                hash: await calculateImageHash(file)
+            }))
+        );
+
+        // Find duplicates
+        const duplicatePairs = [];
+        const duplicateIndices = new Set();
+
+        for (let i = 0; i < hashes.length; i++) {
+            for (let j = i + 1; j < hashes.length; j++) {
+                const distance = hammingDistance(hashes[i].hash, hashes[j].hash);
+
+                if (distance <= threshold) {
+                    duplicatePairs.push({
+                        file1: hashes[i].file,
+                        file2: hashes[j].file,
+                        index1: hashes[i].index,
+                        index2: hashes[j].index,
+                        similarity: Math.round((1 - distance / 64) * 100),
+                        distance
+                    });
+                    duplicateIndices.add(hashes[i].index);
+                    duplicateIndices.add(hashes[j].index);
+                }
+            }
+        }
+
+        return {
+            hasDuplicates: duplicatePairs.length > 0,
+            duplicateCount: duplicateIndices.size,
+            duplicatePairs,
+            duplicateIndices: Array.from(duplicateIndices),
+            recommendation: duplicatePairs.length > 0 ?
+                `Found ${duplicatePairs.length} duplicate/similar image(s). Consider removing them.` :
+                'No duplicate images detected.'
+        };
+
+    } catch (error) {
+        console.error('Duplicate detection error:', error);
+        return {
+            hasDuplicates: false,
+            duplicateCount: 0,
+            duplicatePairs: [],
+            duplicateIndices: [],
+            recommendation: 'Could not check for duplicates',
+            error: error.message
+        };
+    }
+}
+
+/**
+ * Get unique files by removing duplicates (keeps first occurrence)
+ * @param {File[]} files - Array of image files
+ * @param {Object} duplicateResults - Results from detectDuplicates
+ * @returns {Array} Unique files and removed files
+ */
+export function removeDuplicates(files, duplicateResults) {
+    const indicesToRemove = new Set();
+
+    // For each duplicate pair, keep the first occurrence
+    duplicateResults.duplicatePairs.forEach(pair => {
+        indicesToRemove.add(pair.index2);
+    });
+
+    const uniqueFiles = [];
+    const removedFiles = [];
+
+    files.forEach((file, index) => {
+        if (indicesToRemove.has(index)) {
+            removedFiles.push({ file, index, reason: 'duplicate' });
+        } else {
+            uniqueFiles.push(file);
+        }
+    });
+
+    return {
+        uniqueFiles,
+        removedFiles,
+        removedCount: removedFiles.length
+    };
+}
