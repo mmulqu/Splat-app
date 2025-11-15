@@ -13,7 +13,7 @@ preview_bucket_name = "splat-app-storage-preview"
 [[d1_databases]]
 binding = "SPLAT_DB"
 database_name = "splat-app-db-dev"
-database_id = "your-dev-database-id-here"
+database_id = "b187e28a-c25d-4183-908a-e0efe3aef99b"
 
 # Queue for processing jobs
 [[queues.producers]]
@@ -36,9 +36,6 @@ max_batch_timeout = 30
 # STRIPE_SECRET_KEY - Stripe test key (sk_test_...)
 # STRIPE_PUBLISHABLE_KEY - Stripe test publishable key
 # STRIPE_WEBHOOK_SECRET - Stripe test webhook secret
-
-[build]
-command = "npm install && npm run build"
 
 # ============================================
 # PRODUCTION ENVIRONMENT
