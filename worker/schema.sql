@@ -3,8 +3,10 @@
 -- Projects table
 CREATE TABLE IF NOT EXISTS projects (
     id TEXT PRIMARY KEY,
+    name TEXT,
     status TEXT NOT NULL CHECK(status IN ('uploading', 'uploaded', 'processing', 'completed', 'failed')),
     photo_count INTEGER NOT NULL DEFAULT 0,
+    tags TEXT,
     created_at INTEGER NOT NULL,
     completed_at INTEGER,
     model_url TEXT,
@@ -13,6 +15,7 @@ CREATE TABLE IF NOT EXISTS projects (
 
 CREATE INDEX idx_projects_status ON projects(status);
 CREATE INDEX idx_projects_created_at ON projects(created_at DESC);
+CREATE INDEX idx_projects_name ON projects(name);
 
 -- Photos table
 CREATE TABLE IF NOT EXISTS photos (

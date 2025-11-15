@@ -304,6 +304,174 @@
             position: relative;
         }
 
+        .project-controls {
+            display: flex;
+            gap: 15px;
+            margin: 20px 0;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .search-bar {
+            flex: 1;
+            min-width: 250px;
+        }
+
+        .search-bar input {
+            width: 100%;
+            padding: 12px 20px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            color: #fff;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+        }
+
+        .search-bar input:focus {
+            outline: none;
+            border-color: #667eea;
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .search-bar input::placeholder {
+            color: #a8b2d1;
+        }
+
+        .filter-controls {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .filter-select {
+            padding: 10px 15px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            color: #fff;
+            font-size: 0.95rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .filter-select:hover {
+            border-color: #667eea;
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .filter-select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .filter-select option {
+            background: #1a1a2e;
+            color: #fff;
+        }
+
+        .tags-filter {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 20px;
+            min-height: 36px;
+        }
+
+        .tags-list {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .tag {
+            padding: 6px 12px;
+            background: rgba(102, 126, 234, 0.2);
+            border: 1px solid rgba(102, 126, 234, 0.4);
+            border-radius: 20px;
+            color: #667eea;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            user-select: none;
+        }
+
+        .tag:hover {
+            background: rgba(102, 126, 234, 0.3);
+            border-color: #667eea;
+        }
+
+        .tag.active {
+            background: rgba(102, 126, 234, 0.5);
+            border-color: #667eea;
+            color: #fff;
+            box-shadow: 0 0 10px rgba(102, 126, 234, 0.3);
+        }
+
+        .project-tags {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-top: 8px;
+        }
+
+        .project-tag {
+            padding: 4px 10px;
+            background: rgba(102, 126, 234, 0.2);
+            border: 1px solid rgba(102, 126, 234, 0.3);
+            border-radius: 15px;
+            color: #667eea;
+            font-size: 0.75rem;
+        }
+
+        .project-name-input {
+            width: 100%;
+            padding: 10px 15px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            color: #fff;
+            font-size: 0.95rem;
+            margin-bottom: 10px;
+            transition: all 0.3s ease;
+        }
+
+        .project-name-input:focus {
+            outline: none;
+            border-color: #667eea;
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .project-name-input::placeholder {
+            color: #a8b2d1;
+        }
+
+        .tags-input-container {
+            margin-bottom: 15px;
+        }
+
+        .tags-input {
+            width: 100%;
+            padding: 10px 15px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            color: #fff;
+            font-size: 0.95rem;
+            transition: all 0.3s ease;
+        }
+
+        .tags-input:focus {
+            outline: none;
+            border-color: #667eea;
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .tags-input::placeholder {
+            color: #a8b2d1;
+        }
+
         .projects-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
@@ -621,6 +789,17 @@
                         </div>
                     </div>
 
+                    <!-- Project Metadata for Capture -->
+                    <div id="project-metadata-capture" style="display: none; margin: 20px 0;">
+                        <input type="text" id="project-name-capture" class="project-name-input" placeholder="Project name (optional)">
+                        <div class="tags-input-container">
+                            <input type="text" id="project-tags-capture" class="tags-input" placeholder="Tags (comma-separated, e.g., car, outdoor, demo)">
+                            <small style="color: #a8b2d1; font-size: 0.85rem; margin-top: 5px; display: block;">
+                                Tags help organize and find your projects later
+                            </small>
+                        </div>
+                    </div>
+
                     <button class="btn" id="process-captures" style="display: none;">Process Reconstruction</button>
                 </div>
             </div>
@@ -648,6 +827,17 @@
                         <h3 style="color: #667eea; margin-bottom: 15px; text-align: center;">Select Quality</h3>
                         <div class="quality-grid" id="quality-grid">
                             <!-- Quality presets will be loaded here -->
+                        </div>
+                    </div>
+
+                    <!-- Project Metadata for Upload -->
+                    <div id="project-metadata-upload" style="display: none; margin: 20px 0;">
+                        <input type="text" id="project-name-upload" class="project-name-input" placeholder="Project name (optional)">
+                        <div class="tags-input-container">
+                            <input type="text" id="project-tags-upload" class="tags-input" placeholder="Tags (comma-separated, e.g., car, outdoor, demo)">
+                            <small style="color: #a8b2d1; font-size: 0.85rem; margin-top: 5px; display: block;">
+                                Tags help organize and find your projects later
+                            </small>
                         </div>
                     </div>
 
@@ -683,12 +873,37 @@
             <div id="projects" class="tab-content">
                 <div class="upload-section">
                     <h2>My Projects</h2>
-                    <div class="projects-grid" id="projects-grid">
-                        <div class="project-card">
-                            <div class="project-thumbnail"></div>
-                            <h3>Example Project</h3>
-                            <p style="color: #a8b2d1; font-size: 0.9rem;">Created: Today</p>
+
+                    <!-- Project Controls -->
+                    <div class="project-controls">
+                        <div class="search-bar">
+                            <input type="text" id="project-search" placeholder="🔍 Search projects..." />
                         </div>
+                        <div class="filter-controls">
+                            <select id="status-filter" class="filter-select">
+                                <option value="all">All Status</option>
+                                <option value="completed">Completed</option>
+                                <option value="processing">Processing</option>
+                                <option value="failed">Failed</option>
+                            </select>
+                            <select id="sort-order" class="filter-select">
+                                <option value="newest">Newest First</option>
+                                <option value="oldest">Oldest First</option>
+                                <option value="name">Name (A-Z)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Tags Filter -->
+                    <div class="tags-filter" id="tags-filter">
+                        <span style="color: #a8b2d1; font-size: 0.9rem; margin-right: 10px;">Filter by tag:</span>
+                        <div class="tags-list" id="filter-tags-list">
+                            <!-- Tags will be dynamically added -->
+                        </div>
+                    </div>
+
+                    <div class="projects-grid" id="projects-grid">
+                        <!-- Projects will be dynamically loaded -->
                     </div>
                 </div>
             </div>

@@ -11,13 +11,34 @@ let db;
 let qualityPresets = [];
 let selectedQuality = 'standard';
 
+// Project filters
+let currentSearchTerm = '';
+let currentStatusFilter = 'all';
+let currentSortOrder = 'newest';
+let currentTagFilter = null;
+let allProjects = [];
+
 async function initDB() {
-    db = await openDB('SplatAppDB', 1, {
-        upgrade(db) {
+    db = await openDB('SplatAppDB', 2, {
+        upgrade(db, oldVersion) {
+            // Create projects store if it doesn't exist
             if (!db.objectStoreNames.contains('projects')) {
                 const projectStore = db.createObjectStore('projects', { keyPath: 'id', autoIncrement: true });
                 projectStore.createIndex('createdAt', 'createdAt');
+                projectStore.createIndex('name', 'name');
+                projectStore.createIndex('status', 'status');
+            } else if (oldVersion < 2) {
+                // Upgrade existing store
+                const transaction = db.transaction;
+                const projectStore = transaction.objectStore('projects');
+                if (!projectStore.indexNames.contains('name')) {
+                    projectStore.createIndex('name', 'name');
+                }
+                if (!projectStore.indexNames.contains('status')) {
+                    projectStore.createIndex('status', 'status');
+                }
             }
+
             if (!db.objectStoreNames.contains('photos')) {
                 const photoStore = db.createObjectStore('photos', { keyPath: 'id', autoIncrement: true });
                 photoStore.createIndex('projectId', 'projectId');
@@ -238,12 +259,14 @@ function stopCamera() {
 function updatePhotoCount() {
     document.getElementById('photo-count').textContent = capturedPhotos.length;
 
-    // Show quality selector when enough photos
+    // Show quality selector and metadata inputs when enough photos
     if (capturedPhotos.length >= 5) {
         document.getElementById('quality-selector-capture').style.display = 'block';
+        document.getElementById('project-metadata-capture').style.display = 'block';
         updatePriceEstimate(capturedPhotos.length, 'RTX_4090', selectedQuality);
     } else {
         document.getElementById('quality-selector-capture').style.display = 'none';
+        document.getElementById('project-metadata-capture').style.display = 'none';
     }
 }
 
@@ -317,8 +340,12 @@ async function processCapturedPhotos() {
 
         const result = await response.json();
 
+        // Get project metadata from capture inputs
+        const projectName = document.getElementById('project-name-capture').value;
+        const projectTags = document.getElementById('project-tags-capture').value;
+
         // Save project to IndexedDB
-        await saveProject(result);
+        await saveProject(result, projectName, projectTags);
 
         showStatus('Photos uploaded! Processing started...', 'success');
 
@@ -513,12 +540,14 @@ async function handleFiles(files) {
         fileList.appendChild(fileItem);
     });
 
-    // Show quality selector when enough files
+    // Show quality selector and metadata inputs when enough files
     if (files.length >= 5) {
         document.getElementById('quality-selector').style.display = 'block';
+        document.getElementById('project-metadata-upload').style.display = 'block';
         updatePriceEstimate(files.length, 'RTX_4090', selectedQuality);
     } else {
         document.getElementById('quality-selector').style.display = 'none';
+        document.getElementById('project-metadata-upload').style.display = 'none';
     }
 
     document.getElementById('upload-btn').style.display = files.length > 0 ? 'inline-block' : 'none';
@@ -557,7 +586,12 @@ async function uploadFiles() {
         xhr.addEventListener('load', async () => {
             if (xhr.status === 200) {
                 const result = JSON.parse(xhr.responseText);
-                await saveProject(result);
+
+                // Get project metadata from upload inputs
+                const projectName = document.getElementById('project-name-upload').value;
+                const projectTags = document.getElementById('project-tags-upload').value;
+
+                await saveProject(result, projectName, projectTags);
                 showStatus('Upload successful! Processing started...', 'success');
                 await startProcessing(result.projectId);
             } else {
@@ -578,9 +612,11 @@ async function uploadFiles() {
     }
 }
 
-async function saveProject(projectData) {
+async function saveProject(projectData, name = '', tags = '') {
     const project = {
         ...projectData,
+        name: name.trim() || null,
+        tags: tags.trim() || null,
         createdAt: Date.now(),
         status: 'processing',
         qualityPreset: selectedQuality
@@ -652,31 +688,59 @@ function loadModelInViewer(modelUrl) {
 
 async function loadProjects() {
     const projectsGrid = document.getElementById('projects-grid');
-    const projects = await db.getAllFromIndex('projects', 'createdAt');
+    allProjects = await db.getAllFromIndex('projects', 'createdAt');
+
+    // Update available tags
+    updateTagsFilter();
+
+    // Apply filters
+    const filteredProjects = filterAndSortProjects(allProjects);
 
     projectsGrid.innerHTML = '';
 
-    if (projects.length === 0) {
-        projectsGrid.innerHTML = '<p style="color: #a8b2d1; text-align: center;">No projects yet. Start by capturing or uploading photos!</p>';
+    if (filteredProjects.length === 0) {
+        const message = allProjects.length === 0
+            ? 'No projects yet. Start by capturing or uploading photos!'
+            : 'No projects match your current filters.';
+        projectsGrid.innerHTML = `<p style="color: #a8b2d1; text-align: center;">${message}</p>`;
         return;
     }
 
-    projects.reverse().forEach(project => {
+    filteredProjects.forEach(project => {
         const card = document.createElement('div');
         card.className = 'project-card';
         const quality = project.qualityPreset ? `(${project.qualityPreset})` : '';
+        const projectName = project.name || `Project ${project.id}`;
+        const tags = project.tags ? project.tags.split(',').filter(t => t.trim()) : [];
+
+        // Status color
+        const statusColors = {
+            'completed': '#4ade80',
+            'processing': '#facc15',
+            'failed': '#f87171',
+            'uploading': '#667eea',
+            'uploaded': '#667eea'
+        };
+        const statusColor = statusColors[project.status] || '#a8b2d1';
+
         card.innerHTML = `
             <div class="project-thumbnail"></div>
-            <h3>Project ${project.id}</h3>
+            <h3>${projectName}</h3>
             <p style="color: #a8b2d1; font-size: 0.9rem;">
                 ${new Date(project.createdAt).toLocaleDateString()} ${quality}
             </p>
-            <p style="color: ${project.status === 'completed' ? '#2ecc71' : '#f39c12'}; font-size: 0.9rem;">
+            <p style="color: ${statusColor}; font-size: 0.9rem;">
                 Status: ${project.status}
             </p>
+            ${tags.length > 0 ? `
+                <div class="project-tags">
+                    ${tags.map(tag => `<span class="project-tag">${tag}</span>`).join('')}
+                </div>
+            ` : ''}
         `;
 
         if (project.status === 'completed' && project.modelUrl) {
+            card.style.cursor = 'pointer';
             card.addEventListener('click', () => {
                 loadModelInViewer(project.modelUrl);
                 document.querySelector('[data-tab="viewer"]').click();
@@ -684,6 +748,112 @@ async function loadProjects() {
         }
 
         projectsGrid.appendChild(card);
+    });
+}
+
+function filterAndSortProjects(projects) {
+    let filtered = [...projects];
+
+    // Apply search filter
+    if (currentSearchTerm) {
+        const searchLower = currentSearchTerm.toLowerCase();
+        filtered = filtered.filter(p => {
+            const name = (p.name || `Project ${p.id}`).toLowerCase();
+            const tags = (p.tags || '').toLowerCase();
+            return name.includes(searchLower) || tags.includes(searchLower);
+        });
+    }
+
+    // Apply status filter
+    if (currentStatusFilter !== 'all') {
+        filtered = filtered.filter(p => p.status === currentStatusFilter);
+    }
+
+    // Apply tag filter
+    if (currentTagFilter) {
+        filtered = filtered.filter(p => {
+            const tags = p.tags ? p.tags.split(',').map(t => t.trim()) : [];
+            return tags.includes(currentTagFilter);
+        });
+    }
+
+    // Apply sorting
+    filtered.sort((a, b) => {
+        switch (currentSortOrder) {
+            case 'newest':
+                return b.createdAt - a.createdAt;
+            case 'oldest':
+                return a.createdAt - b.createdAt;
+            case 'name':
+                const nameA = (a.name || `Project ${a.id}`).toLowerCase();
+                const nameB = (b.name || `Project ${b.id}`).toLowerCase();
+                return nameA.localeCompare(nameB);
+            default:
+                return 0;
+        }
+    });
+
+    return filtered;
+}
+
+function updateTagsFilter() {
+    const tagsListContainer = document.getElementById('filter-tags-list');
+
+    // Collect all unique tags
+    const allTags = new Set();
+    allProjects.forEach(project => {
+        if (project.tags) {
+            project.tags.split(',').forEach(tag => {
+                const trimmed = tag.trim();
+                if (trimmed) allTags.add(trimmed);
+            });
+        }
+    });
+
+    tagsListContainer.innerHTML = '';
+
+    if (allTags.size === 0) {
+        tagsListContainer.innerHTML = '<span style="color: #666; font-size: 0.85rem;">No tags yet</span>';
+        return;
+    }
+
+    // Create tag filter chips
+    Array.from(allTags).sort().forEach(tag => {
+        const tagChip = document.createElement('span');
+        tagChip.className = 'tag' + (currentTagFilter === tag ? ' active' : '');
+        tagChip.textContent = tag;
+        tagChip.addEventListener('click', () => {
+            if (currentTagFilter === tag) {
+                currentTagFilter = null;
+            } else {
+                currentTagFilter = tag;
+            }
+            loadProjects();
+        });
+        tagsListContainer.appendChild(tagChip);
+    });
+}
+
+function setupProjectFilters() {
+    // Search input
+    const searchInput = document.getElementById('project-search');
+    searchInput.addEventListener('input', (e) => {
+        currentSearchTerm = e.target.value;
+        loadProjects();
+    });
+
+    // Status filter
+    const statusFilter = document.getElementById('status-filter');
+    statusFilter.addEventListener('change', (e) => {
+        currentStatusFilter = e.target.value;
+        loadProjects();
+    });
+
+    // Sort order
+    const sortOrder = document.getElementById('sort-order');
+    sortOrder.addEventListener('change', (e) => {
+        currentSortOrder = e.target.value;
+        loadProjects();
     });
 }
 
@@ -947,6 +1117,7 @@ async function init() {
     await loadQualityPresets();
     setupTabs();
     setupFileUpload();
+    setupProjectFilters();
 
     // Camera controls
     document.getElementById('start-camera').addEventListener('click', startCamera);
