@@ -2,37 +2,76 @@ name = "splat-app-worker"
 main = "src/index.ts"
 compatibility_date = "2024-01-01"
 
+# Default environment is DEV/STAGING
 # R2 bucket for storing photos and models
 [[r2_buckets]]
 binding = "SPLAT_BUCKET"
-bucket_name = "splat-app-storage"
+bucket_name = "splat-app-storage-dev"
 preview_bucket_name = "splat-app-storage-preview"
 
 # D1 database for metadata
 [[d1_databases]]
 binding = "SPLAT_DB"
-database_name = "splat-app-db"
-database_id = "your-database-id-here"
+database_name = "splat-app-db-dev"
+database_id = "your-dev-database-id-here"
 
 # Queue for processing jobs
 [[queues.producers]]
 binding = "PROCESSING_QUEUE"
-queue = "splat-processing-queue"
+queue = "splat-processing-queue-dev"
 
 [[queues.consumers]]
-queue = "splat-processing-queue"
+queue = "splat-processing-queue-dev"
 max_batch_size = 10
 max_batch_timeout = 30
 
-# Environment variables (set via `wrangler secret put`)
-# REPLICATE_API_KEY
-# MODAL_API_KEY
+# Environment variables for DEV (set via `wrangler secret put`)
 # RUNPOD_API_KEY - Your RunPod API key
 # RUNPOD_ENDPOINT_ID - Your RunPod endpoint ID
-# WORKER_URL - Your worker URL for webhooks (e.g., https://splat-app.your-subdomain.workers.dev)
+# WORKER_URL - https://splat-app-worker.your-subdomain.workers.dev
+# GOOGLE_CLIENT_ID - OAuth client ID
+# GOOGLE_CLIENT_SECRET - OAuth secret
+# GITHUB_CLIENT_ID - OAuth client ID
+# GITHUB_CLIENT_SECRET - OAuth secret
+# STRIPE_SECRET_KEY - Stripe test key (sk_test_...)
+# STRIPE_PUBLISHABLE_KEY - Stripe test publishable key
+# STRIPE_WEBHOOK_SECRET - Stripe test webhook secret
 
 [build]
 command = "npm install && npm run build"
 
+# ============================================
+# PRODUCTION ENVIRONMENT
+# ============================================
 [env.production]
 name = "splat-app-worker-production"
+
+[[env.production.r2_buckets]]
+binding = "SPLAT_BUCKET"
+bucket_name = "splat-app-storage-prod"
+
+[[env.production.d1_databases]]
+binding = "SPLAT_DB"
+database_name = "splat-app-db-prod"
+database_id = "your-prod-database-id-here"
+
+[[env.production.queues.producers]]
+binding = "PROCESSING_QUEUE"
+queue = "splat-processing-queue-prod"
+
+[[env.production.queues.consumers]]
+queue = "splat-processing-queue-prod"
+max_batch_size = 10
+max_batch_timeout = 30
+
+# Environment variables for PRODUCTION (set via `wrangler secret put --env production`)
+# RUNPOD_API_KEY
+# RUNPOD_ENDPOINT_ID
+# WORKER_URL - https://splat-app-worker-production.your-subdomain.workers.dev
+# GOOGLE_CLIENT_ID
+# GOOGLE_CLIENT_SECRET
+# GITHUB_CLIENT_ID
+# GITHUB_CLIENT_SECRET
+# STRIPE_SECRET_KEY - Stripe live key (sk_live_...)
+# STRIPE_PUBLISHABLE_KEY - Stripe live publishable key
+# STRIPE_WEBHOOK_SECRET - Stripe live webhook secret
