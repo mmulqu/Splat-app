@@ -126,7 +126,24 @@ export default {
 
             // List projects endpoint
             if (path === '/api/projects' && request.method === 'GET') {
-                return await handleListProjects(env, corsHeaders);
+                return await handleListProjects(request, env, corsHeaders);
+            }
+
+            // Sync project to cloud
+            if (path === '/api/projects/sync' && request.method === 'POST') {
+                return await handleSyncProject(request, env, corsHeaders);
+            }
+
+            // Update project
+            if (path.match(/^\/api\/projects\/[^\/]+$/) && request.method === 'PUT') {
+                const projectId = path.split('/').pop();
+                return await handleUpdateProject(projectId!, request, env, corsHeaders);
+            }
+
+            // Get single project
+            if (path.match(/^\/api\/projects\/[^\/]+$/) && request.method === 'GET') {
+                const projectId = path.split('/').pop();
+                return await handleGetProject(projectId!, request, env, corsHeaders);
             }
 
             // Price estimate endpoint
@@ -374,19 +391,285 @@ async function handleModelDownload(modelId: string, env: Env, corsHeaders: Recor
 }
 
 /**
- * List all projects
+ * List all projects (filtered by user if authenticated)
  */
-async function handleListProjects(env: Env, corsHeaders: Record<string, string>): Promise<Response> {
+async function handleListProjects(request: Request, env: Env, corsHeaders: Record<string, string>): Promise<Response> {
     try {
-        const projects = await env.SPLAT_DB.prepare(
-            'SELECT * FROM projects ORDER BY created_at DESC LIMIT 50'
-        ).all();
+        const sessionId = getSessionFromRequest(request);
+        let user = null;
+
+        if (sessionId) {
+            user = await Auth.getUserBySession(env.SPLAT_DB, sessionId);
+        }
+
+        let projects;
+        if (user) {
+            // Return user's projects (including public projects)
+            projects = await env.SPLAT_DB.prepare(
+                'SELECT * FROM projects WHERE user_id = ? ORDER BY created_at DESC LIMIT 100'
+            ).bind(user.id).all();
+        } else {
+            // Return only public projects
+            projects = await env.SPLAT_DB.prepare(
+                'SELECT * FROM projects WHERE is_public = 1 ORDER BY created_at DESC LIMIT 50'
+            ).all();
+        }
 
         return jsonResponse({ projects: projects.results }, 200, corsHeaders);
 
     } catch (error) {
         console.error('List projects error:', error);
         return jsonResponse({ error: 'Failed to list projects' }, 500, corsHeaders);
+    }
+}
+
+/**
+ * Get a single project
+ */
+async function handleGetProject(projectId: string, request: Request, env: Env, corsHeaders: Record<string, string>): Promise<Response> {
+    try {
+        const sessionId = getSessionFromRequest(request);
+        let user = null;
+
+        if (sessionId) {
+            user = await Auth.getUserBySession(env.SPLAT_DB, sessionId);
+        }
+
+        const project = await env.SPLAT_DB.prepare(
+            'SELECT * FROM projects WHERE id = ?'
+        ).bind(projectId).first();
+
+        if (!project) {
+            return jsonResponse({ error: 'Project not found' }, 404, corsHeaders);
+        }
+
+        // Check access - user can access their own projects or public projects
+        if (!project.is_public && (!user || project.user_id !== user.id)) {
+            return jsonResponse({ error: 'Access denied' }, 403, corsHeaders);
+        }
+
+        return jsonResponse({ project }, 200, corsHeaders);
+
+    } catch (error) {
+        console.error('Get project error:', error);
+        return jsonResponse({ error: 'Failed to get project' }, 500, corsHeaders);
+    }
+}
+
+/**
+ * Sync project to cloud (create or update)
+ */
+async function handleSyncProject(request: Request, env: Env, corsHeaders: Record<string, string>): Promise<Response> {
+    try {
+        const sessionId = getSessionFromRequest(request);
+
+        if (!sessionId) {
+            return jsonResponse({ error: 'Authentication required' }, 401, corsHeaders);
+        }
+
+        const user = await Auth.getUserBySession(env.SPLAT_DB, sessionId);
+
+        if (!user) {
+            return jsonResponse({ error: 'Invalid session' }, 401, corsHeaders);
+        }
+
+        const body = await request.json() as any;
+        const {
+            id,
+            name,
+            status,
+            photo_count,
+            tags,
+            is_public,
+            created_at,
+            completed_at,
+            model_url,
+            error,
+            updated_at
+        } = body;
+
+        if (!id) {
+            return jsonResponse({ error: 'Project ID required' }, 400, corsHeaders);
+        }
+
+        const now = Date.now();
+        const updatedAt = updated_at || now;
+
+        // Check if project exists
+        const existingProject = await env.SPLAT_DB.prepare(
+            'SELECT * FROM projects WHERE id = ?'
+        ).bind(id).first();
+
+        if (existingProject) {
+            // Update existing project (only if owned by user)
+            if (existingProject.user_id && existingProject.user_id !== user.id) {
+                return jsonResponse({ error: 'Cannot update another user\'s project' }, 403, corsHeaders);
+            }
+
+            // Conflict detection - check if cloud version is newer
+            const cloudUpdatedAt = (existingProject as any).updated_at || (existingProject as any).created_at;
+            if (cloudUpdatedAt > updatedAt) {
+                // Cloud version is newer, return conflict
+                return jsonResponse({
+                    conflict: true,
+                    cloudProject: existingProject,
+                    message: 'Cloud version is newer'
+                }, 409, corsHeaders);
+            }
+
+            await env.SPLAT_DB.prepare(`
+                UPDATE projects
+                SET name = ?, status = ?, photo_count = ?, tags = ?,
+                    is_public = ?, completed_at = ?, model_url = ?,
+                    error = ?, user_id = ?, updated_at = ?
+                WHERE id = ?
+            `).bind(
+                name || null,
+                status,
+                photo_count || 0,
+                tags || null,
+                is_public ? 1 : 0,
+                completed_at || null,
+                model_url || null,
+                error || null,
+                user.id,
+                updatedAt,
+                id
+            ).run();
+
+        } else {
+            // Create new project
+            await env.SPLAT_DB.prepare(`
+                INSERT INTO projects
+                (id, user_id, name, status, photo_count, tags, is_public,
+                 created_at, completed_at, model_url, error, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `).bind(
+                id,
+                user.id,
+                name || null,
+                status,
+                photo_count || 0,
+                tags || null,
+                is_public ? 1 : 0,
+                created_at || now,
+                completed_at || null,
+                model_url || null,
+                error || null,
+                updatedAt
+            ).run();
+        }
+
+        // Return the synced project
+        const syncedProject = await env.SPLAT_DB.prepare(
+            'SELECT * FROM projects WHERE id = ?'
+        ).bind(id).first();
+
+        return jsonResponse({
+            success: true,
+            project: syncedProject,
+            synced_at: now
+        }, 200, corsHeaders);
+
+    } catch (error) {
+        console.error('Sync project error:', error);
+        return jsonResponse({ error: 'Failed to sync project' }, 500, corsHeaders);
+    }
+}
+
+/**
+ * Update an existing project
+ */
+async function handleUpdateProject(projectId: string, request: Request, env: Env, corsHeaders: Record<string, string>): Promise<Response> {
+    try {
+        const sessionId = getSessionFromRequest(request);
+
+        if (!sessionId) {
+            return jsonResponse({ error: 'Authentication required' }, 401, corsHeaders);
+        }
+
+        const user = await Auth.getUserBySession(env.SPLAT_DB, sessionId);
+
+        if (!user) {
+            return jsonResponse({ error: 'Invalid session' }, 401, corsHeaders);
+        }
+
+        const project = await env.SPLAT_DB.prepare(
+            'SELECT * FROM projects WHERE id = ?'
+        ).bind(projectId).first();
+
+        if (!project) {
+            return jsonResponse({ error: 'Project not found' }, 404, corsHeaders);
+        }
+
+        // Only owner can update
+        if (project.user_id !== user.id) {
+            return jsonResponse({ error: 'Access denied' }, 403, corsHeaders);
+        }
+
+        const body = await request.json() as any;
+        const { name, tags, is_public, status, model_url, completed_at, error } = body;
+
+        const now = Date.now();
+
+        // Build update query dynamically
+        const updates: string[] = [];
+        const values: any[] = [];
+
+        if (name !== undefined) {
+            updates.push('name = ?');
+            values.push(name);
+        }
+        if (tags !== undefined) {
+            updates.push('tags = ?');
+            values.push(tags);
+        }
+        if (is_public !== undefined) {
+            updates.push('is_public = ?');
+            values.push(is_public ? 1 : 0);
+        }
+        if (status !== undefined) {
+            updates.push('status = ?');
+            values.push(status);
+        }
+        if (model_url !== undefined) {
+            updates.push('model_url = ?');
+            values.push(model_url);
+        }
+        if (completed_at !== undefined) {
+            updates.push('completed_at = ?');
+            values.push(completed_at);
+        }
+        if (error !== undefined) {
+            updates.push('error = ?');
+            values.push(error);
+        }
+
+        if (updates.length === 0) {
+            return jsonResponse({ error: 'No fields to update' }, 400, corsHeaders);
+        }
+
+        // Always update updated_at
+        updates.push('updated_at = ?');
+        values.push(now);
+        values.push(projectId);
+
+        await env.SPLAT_DB.prepare(
+            `UPDATE projects SET ${updates.join(', ')} WHERE id = ?`
+        ).bind(...values).run();
+
+        const updatedProject = await env.SPLAT_DB.prepare(
+            'SELECT * FROM projects WHERE id = ?'
+        ).bind(projectId).first();
+
+        return jsonResponse({
+            success: true,
+            project: updatedProject
+        }, 200, corsHeaders);
+
+    } catch (error) {
+        console.error('Update project error:', error);
+        return jsonResponse({ error: 'Failed to update project' }, 500, corsHeaders);
     }
 }
 

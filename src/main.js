@@ -22,16 +22,18 @@ let allProjects = [];
 let currentUser = null;
 
 async function initDB() {
-    db = await openDB('SplatAppDB', 2, {
+    db = await openDB('SplatAppDB', 3, {
         upgrade(db, oldVersion) {
             // Create projects store if it doesn't exist
             if (!db.objectStoreNames.contains('projects')) {
-                const projectStore = db.createObjectStore('projects', { keyPath: 'id', autoIncrement: true });
+                const projectStore = db.createObjectStore('projects', { keyPath: 'id' });
                 projectStore.createIndex('createdAt', 'createdAt');
                 projectStore.createIndex('name', 'name');
                 projectStore.createIndex('status', 'status');
-            } else if (oldVersion < 2) {
-                // Upgrade existing store
+                projectStore.createIndex('serverId', 'serverId');
+                projectStore.createIndex('updatedAt', 'updatedAt');
+            } else if (oldVersion < 3) {
+                // Upgrade existing store - can't modify keyPath, but can add indexes
                 const transaction = db.transaction;
                 const projectStore = transaction.objectStore('projects');
                 if (!projectStore.indexNames.contains('name')) {
@@ -39,6 +41,12 @@ async function initDB() {
                 }
                 if (!projectStore.indexNames.contains('status')) {
                     projectStore.createIndex('status', 'status');
+                }
+                if (!projectStore.indexNames.contains('serverId')) {
+                    projectStore.createIndex('serverId', 'serverId');
+                }
+                if (!projectStore.indexNames.contains('updatedAt')) {
+                    projectStore.createIndex('updatedAt', 'updatedAt');
                 }
             }
 
@@ -616,17 +624,31 @@ async function uploadFiles() {
 }
 
 async function saveProject(projectData, name = '', tags = '') {
+    const now = Date.now();
     const project = {
         ...projectData,
+        id: projectData.projectId || crypto.randomUUID(),
         name: name.trim() || null,
         tags: tags.trim() || null,
-        createdAt: Date.now(),
+        createdAt: now,
+        updatedAt: now,
         status: 'processing',
-        qualityPreset: selectedQuality
+        qualityPreset: selectedQuality,
+        isPublic: false,
+        serverId: null,
+        syncedAt: null
     };
 
-    const id = await db.add('projects', project);
-    return id;
+    await db.put('projects', project);
+
+    // Sync to cloud if user is authenticated
+    if (currentUser) {
+        syncProjectToCloud(project).catch(err => {
+            console.error('Failed to sync project to cloud:', err);
+        });
+    }
+
+    return project.id;
 }
 
 async function startProcessing(projectId) {
@@ -1114,6 +1136,204 @@ function urlBase64ToUint8Array(base64String) {
     return outputArray;
 }
 
+// Cloud Sync Functions
+
+/**
+ * Sync a single project to the cloud
+ */
+async function syncProjectToCloud(project) {
+    if (!currentUser) {
+        console.log('User not authenticated, skipping cloud sync');
+        return;
+    }
+
+    try {
+        // Prepare project data for cloud (convert camelCase to snake_case)
+        const cloudProject = {
+            id: project.serverId || project.id,
+            name: project.name,
+            status: project.status,
+            photo_count: project.photoCount || 0,
+            tags: project.tags,
+            is_public: project.isPublic || false,
+            created_at: project.createdAt,
+            completed_at: project.completedAt || null,
+            model_url: project.modelUrl || null,
+            error: project.error || null,
+            updated_at: project.updatedAt || Date.now()
+        };
+
+        const response = await fetch(`${API_ENDPOINT}/projects/sync`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            credentials: 'include',
+            body: JSON.stringify(cloudProject)
+        });
+
+        if (response.status === 409) {
+            // Conflict - cloud version is newer
+            const data = await response.json();
+            console.log('Conflict detected:', data.message);
+            // For now, accept cloud version
+            if (data.cloudProject) {
+                await updateProjectFromCloud(data.cloudProject);
+            }
+            return;
+        }
+
+        if (!response.ok) {
+            throw new Error('Sync failed: ' + response.statusText);
+        }
+
+        const result = await response.json();
+
+        // Update local project with sync info
+        const updatedProject = {
+            ...project,
+            serverId: result.project.id,
+            syncedAt: result.synced_at
+        };
+
+        await db.put('projects', updatedProject);
+        console.log('Project synced to cloud:', result.project.id);
+
+    } catch (error) {
+        console.error('Error syncing project to cloud:', error);
+        throw error;
+    }
+}
+
+/**
+ * Sync all local projects to the cloud
+ */
+async function syncAllProjectsToCloud() {
+    if (!currentUser) {
+        console.log('User not authenticated, skipping cloud sync');
+        return;
+    }
+
+    try {
+        const projects = await db.getAll('projects');
+
+        for (const project of projects) {
+            try {
+                await syncProjectToCloud(project);
+            } catch (error) {
+                console.error('Failed to sync project:', project.id, error);
+                // Continue with next project
+            }
+        }
+
+        console.log('All projects synced to cloud');
+    } catch (error) {
+        console.error('Error syncing projects to cloud:', error);
+    }
+}
+
+/**
+ * Sync projects from cloud to local IndexedDB
+ */
+async function syncProjectsFromCloud() {
+    if (!currentUser) {
+        console.log('User not authenticated, skipping cloud sync');
+        return;
+    }
+
+    try {
+        const response = await fetch(`${API_ENDPOINT}/projects`, {
+            credentials: 'include'
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to fetch projects from cloud');
+        }
+
+        const data = await response.json();
+        const cloudProjects = data.projects || [];
+
+        for (const cloudProject of cloudProjects) {
+            await updateProjectFromCloud(cloudProject);
+        }
+
+        console.log('Projects synced from cloud:', cloudProjects.length);
+        return cloudProjects.length;
+
+    } catch (error) {
+        console.error('Error syncing projects from cloud:', error);
+        throw error;
+    }
+}
+
+/**
+ * Update local project from cloud data
+ */
+async function updateProjectFromCloud(cloudProject) {
+    // Convert snake_case to camelCase
+    const localProject = {
+        id: cloudProject.id,
+        serverId: cloudProject.id,
+        name: cloudProject.name,
+        status: cloudProject.status,
+        photoCount: cloudProject.photo_count,
+        tags: cloudProject.tags,
+        isPublic: cloudProject.is_public === 1,
+        createdAt: cloudProject.created_at,
+        completedAt: cloudProject.completed_at,
+        updatedAt: cloudProject.updated_at || cloudProject.created_at,
+        modelUrl: cloudProject.model_url,
+        error: cloudProject.error,
+        syncedAt: Date.now()
+    };
+
+    // Check if project exists locally
+    const existingProject = await db.get('projects', cloudProject.id);
+
+    if (existingProject) {
+        // Merge with existing, prefer newer updatedAt
+        const existingUpdated = existingProject.updatedAt || existingProject.createdAt;
+        const cloudUpdated = localProject.updatedAt;
+
+        if (cloudUpdated >= existingUpdated) {
+            // Cloud version is newer or equal, update local
+            await db.put('projects', { ...existingProject, ...localProject });
+        }
+        // If local is newer, keep local (it will sync to cloud later)
+    } else {
+        // New project from cloud, add to local
+        await db.put('projects', localProject);
+    }
+}
+
+/**
+ * Full two-way sync
+ */
+async function performFullSync() {
+    if (!currentUser) {
+        console.log('User not authenticated, skipping sync');
+        return { synced: 0, message: 'Not authenticated' };
+    }
+
+    try {
+        showStatus('Syncing projects...', 'info');
+
+        // First sync from cloud (to get any updates)
+        const cloudCount = await syncProjectsFromCloud();
+
+        // Then sync local changes to cloud
+        await syncAllProjectsToCloud();
+
+        showStatus(`Synced ${cloudCount} projects from cloud`, 'success');
+        return { synced: cloudCount, message: 'Sync complete' };
+
+    } catch (error) {
+        console.error('Full sync error:', error);
+        showStatus('Sync failed: ' + error.message, 'error');
+        throw error;
+    }
+}
+
 // Authentication functions
 async function checkAuth() {
     try {
@@ -1123,8 +1343,16 @@ async function checkAuth() {
 
         if (response.ok) {
             const data = await response.json();
+            const wasLoggedOut = !currentUser;
             currentUser = data.user;
             updateAuthUI();
+
+            // Trigger cloud sync when user logs in
+            if (wasLoggedOut && currentUser) {
+                performFullSync().catch(err => {
+                    console.error('Auto-sync failed:', err);
+                });
+            }
         } else {
             currentUser = null;
             updateAuthUI();

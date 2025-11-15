@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS projects (
     is_public INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL,
     completed_at INTEGER,
+    updated_at INTEGER,
     model_url TEXT,
     error TEXT,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
