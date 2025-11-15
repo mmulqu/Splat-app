@@ -11,6 +11,7 @@ interface Env {
     REPLICATE_API_KEY?: string;
     MODAL_API_KEY?: string;
     RUNPOD_API_KEY?: string;
+    RUNPOD_ENDPOINT_ID?: string;
 }
 
 interface UploadResponse {
@@ -34,6 +35,27 @@ interface StatusResponse {
     status: 'queued' | 'processing' | 'completed' | 'failed';
     progress?: number;
     modelUrl?: string;
+    error?: string;
+}
+
+interface PriceEstimate {
+    estimatedCost: number;
+    estimatedTime: number;
+    gpuType: string;
+    breakdown: {
+        colmapTime: number;
+        trainingTime: number;
+        overhead: number;
+        hourlyRate: number;
+    };
+}
+
+interface WebhookPayload {
+    job_id: string;
+    status: string;
+    model_url?: string;
+    model_size_mb?: number;
+    project_id?: string;
     error?: string;
 }
 
@@ -80,6 +102,17 @@ export default {
             // List projects endpoint
             if (path === '/api/projects' && request.method === 'GET') {
                 return await handleListProjects(env, corsHeaders);
+            }
+
+            // Price estimate endpoint
+            if (path === '/api/estimate' && request.method === 'POST') {
+                return await handlePriceEstimate(request, env, corsHeaders);
+            }
+
+            // Webhook endpoint for RunPod callbacks
+            if (path.startsWith('/api/webhook/') && request.method === 'POST') {
+                const jobId = path.split('/').pop();
+                return await handleWebhook(jobId!, request, env, corsHeaders);
             }
 
             return new Response('Not Found', { status: 404, headers: corsHeaders });
@@ -197,9 +230,10 @@ async function handleProcess(request: Request, env: Env, corsHeaders: Record<str
             photoKeys: photos.results.map((p: any) => p.r2_key),
         });
 
-        // Trigger GPU processing (example using Replicate)
-        // In production, this would be handled by a queue consumer
-        // triggerGPUProcessing(jobId, projectId, env);
+        // Trigger GPU processing with RunPod
+        if (env.RUNPOD_API_KEY && env.RUNPOD_ENDPOINT_ID) {
+            await triggerRunPodProcessing(jobId, projectId, photos.results, env);
+        }
 
         const response: ProcessResponse = {
             success: true,
@@ -285,47 +319,170 @@ async function handleListProjects(env: Env, corsHeaders: Record<string, string>)
 }
 
 /**
- * Trigger GPU processing (example implementation)
+ * Trigger RunPod GPU processing
  */
-async function triggerGPUProcessing(jobId: string, projectId: string, env: Env) {
-    // Example: Using Replicate API
-    if (env.REPLICATE_API_KEY) {
-        try {
-            // This would call Replicate's API to start the gaussian splatting process
-            // The actual implementation would depend on which model you're using
+async function triggerRunPodProcessing(jobId: string, projectId: string, photos: any[], env: Env) {
+    try {
+        // Generate pre-signed URLs for photos
+        const imageUrls = await Promise.all(
+            photos.map(async (photo: any) => {
+                const url = await env.SPLAT_BUCKET.createSignedUrl(photo.r2_key, {
+                    expiresIn: 3600, // 1 hour
+                });
+                return url;
+            })
+        );
 
-            const response = await fetch('https://api.replicate.com/v1/predictions', {
+        // Generate pre-signed upload URL for result
+        const modelKey = `models/${projectId}.ply`;
+        const uploadUrl = await env.SPLAT_BUCKET.createSignedUrl(modelKey, {
+            method: 'PUT',
+            expiresIn: 7200, // 2 hours
+        });
+
+        // Get the worker base URL for webhook
+        const webhookUrl = `${new URL(env.WORKER_URL || 'https://your-worker.workers.dev').origin}/api/webhook/${jobId}`;
+
+        // Call RunPod API
+        const response = await fetch(
+            `https://api.runpod.ai/v2/${env.RUNPOD_ENDPOINT_ID}/run`,
+            {
                 method: 'POST',
                 headers: {
-                    'Authorization': `Token ${env.REPLICATE_API_KEY}`,
+                    'Authorization': `Bearer ${env.RUNPOD_API_KEY}`,
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    version: 'gaussian-splatting-model-version-here',
                     input: {
-                        // Pass R2 URLs or pre-signed URLs for photos
-                        images: [], // Array of image URLs
+                        project_id: projectId,
+                        image_urls: imageUrls,
+                        iterations: 7000,
+                        upload_url: uploadUrl,
+                        webhook_url: webhookUrl,
                     },
-                    webhook: `https://your-worker.workers.dev/api/webhook/${jobId}`,
                 }),
-            });
+            }
+        );
 
-            const data = await response.json();
+        if (!response.ok) {
+            throw new Error(`RunPod API error: ${response.statusText}`);
+        }
 
-            // Update job with prediction ID
+        const data: any = await response.json();
+
+        // Update job with RunPod job ID
+        await env.SPLAT_DB.prepare(
+            'UPDATE jobs SET external_id = ?, status = ? WHERE id = ?'
+        ).bind(data.id, 'processing', jobId).run();
+
+        console.log(`RunPod job started: ${data.id}`);
+
+    } catch (error) {
+        console.error('RunPod trigger error:', error);
+        await env.SPLAT_DB.prepare(
+            'UPDATE jobs SET status = ?, error = ? WHERE id = ?'
+        ).bind('failed', String(error), jobId).run();
+    }
+}
+
+/**
+ * Calculate price estimate
+ */
+function calculatePriceEstimate(photoCount: number, iterations: number = 7000, gpuType: string = 'RTX_4090'): PriceEstimate {
+    // GPU pricing per hour
+    const gpuPrices: Record<string, number> = {
+        'RTX_4090': 0.35,
+        'RTX_3090': 0.20,
+        'A100_80GB': 2.17,
+        'A100_40GB': 1.89,
+        'T4': 0.40,
+    };
+
+    const hourlyRate = gpuPrices[gpuType] || 0.35;
+
+    // Time estimates (in seconds)
+    const colmapTime = (photoCount / 10) * 90; // ~90 sec per 10 images
+    const trainingTime = iterations * 0.5; // ~0.5 sec per iteration on RTX 4090
+    const overhead = 60; // 1 minute overhead
+
+    const totalSeconds = colmapTime + trainingTime + overhead;
+    const totalHours = totalSeconds / 3600;
+
+    const estimatedCost = totalHours * hourlyRate;
+
+    return {
+        estimatedCost: parseFloat(estimatedCost.toFixed(3)),
+        estimatedTime: Math.ceil(totalSeconds),
+        gpuType,
+        breakdown: {
+            colmapTime: Math.ceil(colmapTime),
+            trainingTime: Math.ceil(trainingTime),
+            overhead,
+            hourlyRate,
+        },
+    };
+}
+
+/**
+ * Handle price estimate request
+ */
+async function handlePriceEstimate(request: Request, env: Env, corsHeaders: Record<string, string>): Promise<Response> {
+    try {
+        const body = await request.json() as any;
+        const photoCount = body.photoCount || 20;
+        const iterations = body.iterations || 7000;
+        const gpuType = body.gpuType || 'RTX_4090';
+
+        const estimate = calculatePriceEstimate(photoCount, iterations, gpuType);
+
+        return jsonResponse(estimate, 200, corsHeaders);
+
+    } catch (error) {
+        console.error('Price estimate error:', error);
+        return jsonResponse({ error: 'Failed to calculate estimate' }, 500, corsHeaders);
+    }
+}
+
+/**
+ * Handle webhook from RunPod
+ */
+async function handleWebhook(jobId: string, request: Request, env: Env, corsHeaders: Record<string, string>): Promise<Response> {
+    try {
+        const payload = await request.json() as WebhookPayload;
+
+        console.log(`Webhook received for job ${jobId}:`, payload);
+
+        // Update job status in database
+        if (payload.status === 'completed') {
             await env.SPLAT_DB.prepare(
-                'UPDATE jobs SET external_id = ?, status = ? WHERE id = ?'
-            ).bind(data.id, 'processing', jobId).run();
+                'UPDATE jobs SET status = ?, model_url = ?, completed_at = ?, progress = ? WHERE id = ?'
+            ).bind('completed', payload.model_url, Date.now(), 100, jobId).run();
 
-        } catch (error) {
-            console.error('GPU processing trigger error:', error);
+            // Update project status
+            if (payload.project_id) {
+                await env.SPLAT_DB.prepare(
+                    'UPDATE projects SET status = ?, model_url = ?, completed_at = ? WHERE id = ?'
+                ).bind('completed', payload.model_url, Date.now(), payload.project_id).run();
+            }
+
+        } else if (payload.status === 'failed') {
             await env.SPLAT_DB.prepare(
                 'UPDATE jobs SET status = ?, error = ? WHERE id = ?'
-            ).bind('failed', String(error), jobId).run();
-        }
-    }
+            ).bind('failed', payload.error || 'Unknown error', jobId).run();
 
-    // Similar implementations for Modal, RunPod, etc.
+            if (payload.project_id) {
+                await env.SPLAT_DB.prepare(
+                    'UPDATE projects SET status = ? WHERE id = ?'
+                ).bind('failed', payload.project_id).run();
+            }
+        }
+
+        return jsonResponse({ success: true }, 200, corsHeaders);
+
+    } catch (error) {
+        console.error('Webhook error:', error);
+        return jsonResponse({ error: 'Webhook processing failed' }, 500, corsHeaders);
+    }
 }
 
 /**

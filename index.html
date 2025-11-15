@@ -257,6 +257,125 @@
             border-radius: 8px;
             border: 2px solid rgba(102, 126, 234, 0.3);
         }
+
+        /* Price Estimate Box */
+        .price-estimate-box {
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+            border: 2px solid rgba(102, 126, 234, 0.3);
+            border-radius: 15px;
+            padding: 25px;
+            margin: 30px 0;
+            backdrop-filter: blur(10px);
+            display: none;
+        }
+
+        .estimate-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .estimate-header h3 {
+            font-size: 1.3rem;
+            color: #667eea;
+            margin: 0;
+        }
+
+        .cost-amount {
+            font-size: 2rem;
+            font-weight: bold;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .estimate-details {
+            display: grid;
+            gap: 12px;
+            margin-bottom: 15px;
+        }
+
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 8px;
+        }
+
+        .detail-row span:first-child {
+            color: #a8b2d1;
+        }
+
+        .detail-row span:last-child {
+            color: #fff;
+            font-weight: 500;
+        }
+
+        .estimate-breakdown {
+            margin-top: 15px;
+        }
+
+        .estimate-breakdown details {
+            cursor: pointer;
+        }
+
+        .estimate-breakdown summary {
+            color: #667eea;
+            padding: 10px;
+            border-radius: 8px;
+            background: rgba(102, 126, 234, 0.1);
+            transition: all 0.3s ease;
+        }
+
+        .estimate-breakdown summary:hover {
+            background: rgba(102, 126, 234, 0.2);
+        }
+
+        .breakdown-content {
+            margin-top: 15px;
+            padding: 15px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+        }
+
+        .breakdown-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .breakdown-row:last-child {
+            border-bottom: none;
+        }
+
+        .breakdown-row span:first-child {
+            color: #a8b2d1;
+            font-size: 0.9rem;
+        }
+
+        .breakdown-row span:last-child {
+            color: #667eea;
+            font-weight: 500;
+        }
+
+        .estimate-note {
+            margin-top: 15px;
+            padding: 12px;
+            background: rgba(255, 193, 7, 0.1);
+            border-left: 3px solid #ffc107;
+            border-radius: 5px;
+        }
+
+        .estimate-note small {
+            color: #ffc107;
+            font-size: 0.85rem;
+        }
     </style>
 </head>
 <body>

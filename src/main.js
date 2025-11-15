@@ -108,6 +108,7 @@ function stopCamera() {
 
 function updatePhotoCount() {
     document.getElementById('photo-count').textContent = capturedPhotos.length;
+    updatePriceEstimate(capturedPhotos.length);
 }
 
 function addThumbnail(url) {
@@ -209,6 +210,7 @@ function handleFiles(files) {
     });
 
     document.getElementById('upload-btn').style.display = files.length > 0 ? 'inline-block' : 'none';
+    updatePriceEstimate(files.length);
 }
 
 async function uploadFiles() {
@@ -378,6 +380,143 @@ function showStatus(message, type = 'info') {
             statusDiv.style.display = 'none';
         }, 5000);
     }
+}
+
+// Price estimation
+async function updatePriceEstimate(photoCount, gpuType = 'RTX_4090') {
+    if (photoCount < 5) {
+        hidePriceEstimate();
+        return;
+    }
+
+    try {
+        const response = await fetch(`${API_ENDPOINT}/estimate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                photoCount,
+                iterations: 7000,
+                gpuType
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to get estimate');
+        }
+
+        const estimate = await response.json();
+        displayPriceEstimate(estimate);
+
+    } catch (error) {
+        console.error('Price estimate error:', error);
+        // Fallback to local calculation
+        const estimate = calculateLocalEstimate(photoCount, gpuType);
+        displayPriceEstimate(estimate);
+    }
+}
+
+function calculateLocalEstimate(photoCount, gpuType = 'RTX_4090') {
+    const gpuPrices = {
+        'RTX_4090': 0.35,
+        'RTX_3090': 0.20,
+        'A100_80GB': 2.17,
+        'A100_40GB': 1.89,
+        'T4': 0.40,
+    };
+
+    const hourlyRate = gpuPrices[gpuType] || 0.35;
+    const colmapTime = (photoCount / 10) * 90;
+    const trainingTime = 7000 * 0.5;
+    const overhead = 60;
+    const totalSeconds = colmapTime + trainingTime + overhead;
+    const totalHours = totalSeconds / 3600;
+    const estimatedCost = totalHours * hourlyRate;
+
+    return {
+        estimatedCost: parseFloat(estimatedCost.toFixed(3)),
+        estimatedTime: Math.ceil(totalSeconds),
+        gpuType,
+        breakdown: {
+            colmapTime: Math.ceil(colmapTime),
+            trainingTime: Math.ceil(trainingTime),
+            overhead,
+            hourlyRate
+        }
+    };
+}
+
+function displayPriceEstimate(estimate) {
+    // Create or update price estimate display
+    let estimateDiv = document.getElementById('price-estimate');
+
+    if (!estimateDiv) {
+        estimateDiv = document.createElement('div');
+        estimateDiv.id = 'price-estimate';
+        estimateDiv.className = 'price-estimate-box';
+
+        // Insert into both capture and upload sections
+        const captureSections = document.querySelectorAll('.upload-section');
+        captureSections.forEach(section => {
+            const clone = estimateDiv.cloneNode(true);
+            section.appendChild(clone);
+        });
+
+        // Use the first one for updates
+        estimateDiv = document.getElementById('price-estimate');
+    }
+
+    const minutes = Math.floor(estimate.estimatedTime / 60);
+    const seconds = estimate.estimatedTime % 60;
+
+    estimateDiv.innerHTML = `
+        <div class="estimate-header">
+            <h3>💰 Estimated Cost</h3>
+            <div class="cost-amount">$${estimate.estimatedCost.toFixed(2)}</div>
+        </div>
+        <div class="estimate-details">
+            <div class="detail-row">
+                <span>⏱️ Processing Time:</span>
+                <span>${minutes}m ${seconds}s</span>
+            </div>
+            <div class="detail-row">
+                <span>🎮 GPU:</span>
+                <span>${estimate.gpuType.replace('_', ' ')}</span>
+            </div>
+            <div class="detail-row">
+                <span>💵 Rate:</span>
+                <span>$${estimate.breakdown.hourlyRate.toFixed(2)}/hr</span>
+            </div>
+        </div>
+        <div class="estimate-breakdown">
+            <details>
+                <summary>View breakdown</summary>
+                <div class="breakdown-content">
+                    <div class="breakdown-row">
+                        <span>COLMAP (Structure from Motion):</span>
+                        <span>${Math.floor(estimate.breakdown.colmapTime / 60)}m</span>
+                    </div>
+                    <div class="breakdown-row">
+                        <span>Gaussian Splatting Training:</span>
+                        <span>${Math.floor(estimate.breakdown.trainingTime / 60)}m</span>
+                    </div>
+                    <div class="breakdown-row">
+                        <span>Overhead (upload/download):</span>
+                        <span>${Math.floor(estimate.breakdown.overhead / 60)}m</span>
+                    </div>
+                </div>
+            </details>
+        </div>
+        <div class="estimate-note">
+            <small>💡 Estimate based on ${estimate.gpuType.replace('_', ' ')} GPU. Actual cost may vary.</small>
+        </div>
+    `;
+
+    estimateDiv.style.display = 'block';
+}
+
+function hidePriceEstimate() {
+    const estimates = document.querySelectorAll('#price-estimate');
+    estimates.forEach(est => est.style.display = 'none');
 }
 
 // Service Worker registration

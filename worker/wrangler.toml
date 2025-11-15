@@ -27,7 +27,9 @@ max_batch_timeout = 30
 # Environment variables (set via `wrangler secret put`)
 # REPLICATE_API_KEY
 # MODAL_API_KEY
-# RUNPOD_API_KEY
+# RUNPOD_API_KEY - Your RunPod API key
+# RUNPOD_ENDPOINT_ID - Your RunPod endpoint ID
+# WORKER_URL - Your worker URL for webhooks (e.g., https://splat-app.your-subdomain.workers.dev)
 
 [build]
 command = "npm install && npm run build"
