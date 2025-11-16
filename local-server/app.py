@@ -15,14 +15,19 @@ from pathlib import Path
 from flask import Flask, request, jsonify, send_file, send_from_directory
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
+from PIL import Image
+import pillow_heif
 
 app = Flask(__name__, static_folder='../public', static_url_path='')
 CORS(app)  # Enable CORS for local development
 
+# Register HEIF opener with PIL
+pillow_heif.register_heif_opener()
+
 # Configuration
 UPLOAD_FOLDER = Path('/workspace/uploads')
 OUTPUT_FOLDER = Path('/workspace/outputs')
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'webp'}
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'webp', 'heic', 'heif'}
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 
 # Create necessary directories
@@ -112,10 +117,45 @@ def upload_photos(project_id):
         for idx, file in enumerate(files):
             if file and allowed_file(file.filename):
                 filename = secure_filename(file.filename)
+                file_ext = filename.rsplit('.', 1)[1].lower() if '.' in filename else ''
+
                 # Add index to filename to maintain order
                 indexed_filename = f"{idx:03d}_{filename}"
-                filepath = project_dir / indexed_filename
-                file.save(filepath)
+
+                # Check if HEIC/HEIF file needs conversion
+                if file_ext in ['heic', 'heif']:
+                    # Convert HEIC to JPEG
+                    print(f"Converting HEIC image: {filename}")
+
+                    # Save temporarily
+                    temp_path = project_dir / f"temp_{indexed_filename}"
+                    file.save(temp_path)
+
+                    try:
+                        # Open HEIC and convert to JPEG
+                        img = Image.open(temp_path)
+
+                        # Change extension to .jpg
+                        jpeg_filename = indexed_filename.rsplit('.', 1)[0] + '.jpg'
+                        filepath = project_dir / jpeg_filename
+
+                        # Save as JPEG with high quality
+                        img.save(filepath, 'JPEG', quality=95)
+
+                        # Remove temp HEIC file
+                        temp_path.unlink()
+
+                        print(f"✓ Converted {filename} to JPEG")
+
+                    except Exception as e:
+                        print(f"Error converting HEIC: {e}")
+                        # If conversion fails, keep original
+                        temp_path.rename(project_dir / indexed_filename)
+                        filepath = project_dir / indexed_filename
+                else:
+                    # Save non-HEIC files directly
+                    filepath = project_dir / indexed_filename
+                    file.save(filepath)
 
                 uploaded_files.append({
                     'index': idx,

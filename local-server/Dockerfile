@@ -9,13 +9,15 @@ RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
     python3-dev \
+    libheif-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Flask and dependencies for the web server using python3 -m pip
 RUN python3 -m pip install --no-cache-dir \
     Flask==3.0.0 \
     Flask-CORS==4.0.0 \
-    Werkzeug==3.0.1
+    Werkzeug==3.0.1 \
+    pillow-heif==0.13.1
 
 # Create necessary directories
 RUN mkdir -p /workspace/uploads /workspace/outputs /app
