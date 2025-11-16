@@ -205,6 +205,57 @@
         .status-message {
             text-align: center;
             color: #666;
+            margin-bottom: 15px;
+        }
+
+        .detailed-progress {
+            background: #f8f9ff;
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 15px;
+            display: none;
+        }
+
+        .detailed-progress h4 {
+            margin: 0 0 10px 0;
+            color: #333;
+            font-size: 14px;
+        }
+
+        .progress-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            font-size: 13px;
+        }
+
+        .progress-stat {
+            background: white;
+            padding: 10px;
+            border-radius: 6px;
+        }
+
+        .progress-stat-label {
+            color: #666;
+            font-size: 11px;
+            margin-bottom: 3px;
+        }
+
+        .progress-stat-value {
+            color: #333;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .live-viewer-btn {
+            background: #ff6b6b;
+            margin-top: 15px;
+            display: none;
+            text-decoration: none;
+        }
+
+        .live-viewer-btn:hover {
+            transform: translateY(-2px);
         }
 
         .result-container {
@@ -332,6 +383,32 @@
                     <div class="progress-fill" id="progressFill">0%</div>
                 </div>
                 <div class="status-message" id="statusMessage">Initializing...</div>
+
+                <a href="http://localhost:7007" target="_blank" class="btn live-viewer-btn" id="liveViewerBtn">
+                    🔴 Open Live Training Viewer
+                </a>
+
+                <div class="detailed-progress" id="detailedProgress">
+                    <h4>Training Metrics</h4>
+                    <div class="progress-stats">
+                        <div class="progress-stat">
+                            <div class="progress-stat-label">Iteration</div>
+                            <div class="progress-stat-value" id="statIteration">-</div>
+                        </div>
+                        <div class="progress-stat">
+                            <div class="progress-stat-label">Time per Iteration</div>
+                            <div class="progress-stat-value" id="statIterTime">-</div>
+                        </div>
+                        <div class="progress-stat">
+                            <div class="progress-stat-label">Estimated Time Left</div>
+                            <div class="progress-stat-value" id="statETA">-</div>
+                        </div>
+                        <div class="progress-stat">
+                            <div class="progress-stat-label">Training Speed</div>
+                            <div class="progress-stat-value" id="statRaysPerSec">-</div>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <div class="error" id="errorMessage"></div>
@@ -555,17 +632,50 @@
                 updateProgress(job.progress || 0);
                 updateStatus(getStatusMessage(job));
 
+                // Update detailed metrics if available
+                if (job.metrics) {
+                    updateDetailedProgress(job.metrics);
+                }
+
+                // Show live viewer button when training starts
+                if (job.status === 'processing' && job.progress > 20) {
+                    const liveViewerBtn = document.getElementById('liveViewerBtn');
+                    liveViewerBtn.style.display = 'inline-block';
+                }
+
                 if (job.status === 'completed') {
                     clearInterval(statusInterval);
+                    document.getElementById('liveViewerBtn').style.display = 'none';
+                    document.getElementById('detailedProgress').style.display = 'none';
                     showResult(job.model_url);
                 } else if (job.status === 'failed') {
                     clearInterval(statusInterval);
                     showError(job.error || 'Processing failed');
                     document.getElementById('startBtn').disabled = false;
                     document.getElementById('startBtn').textContent = 'Start Processing';
+                    document.getElementById('liveViewerBtn').style.display = 'none';
+                    document.getElementById('detailedProgress').style.display = 'none';
                 }
             } catch (error) {
                 console.error('Status check error:', error);
+            }
+        }
+
+        function updateDetailedProgress(metrics) {
+            const detailedProgress = document.getElementById('detailedProgress');
+            detailedProgress.style.display = 'block';
+
+            if (metrics.iteration) {
+                document.getElementById('statIteration').textContent = metrics.iteration;
+            }
+            if (metrics.iter_time) {
+                document.getElementById('statIterTime').textContent = metrics.iter_time;
+            }
+            if (metrics.eta) {
+                document.getElementById('statETA').textContent = metrics.eta;
+            }
+            if (metrics.rays_per_sec) {
+                document.getElementById('statRaysPerSec').textContent = metrics.rays_per_sec;
             }
         }
 

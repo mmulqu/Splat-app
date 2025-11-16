@@ -9,6 +9,7 @@ import json
 import uuid
 import shutil
 import subprocess
+import re
 from datetime import datetime
 from pathlib import Path
 from flask import Flask, request, jsonify, send_file, send_from_directory
@@ -276,17 +277,47 @@ def process_gaussian_splatting(job_id, project_id, quality_preset):
         # Monitor progress
         for line in process.stdout:
             print(f"[{job_id}] {line.rstrip()}")
-            # Parse progress from output
-            if 'Iteration' in line:
-                # Try to extract iteration number
+
+            # Parse nerfstudio training output
+            # Format: [job_id] 2930 (9.77%)  39.238 ms  17 m, 42 s  18.36 M
+            # Pattern: iteration (percentage)  iter_time  eta  rays_per_sec
+            training_pattern = r'\[[\w-]+\]\s+(\d+)\s+\(([\d.]+)%\)\s+([\d.]+ ms)\s+((?:\d+ [msh],?\s*)+)\s+([\d.]+ [MK])'
+            match = re.search(training_pattern, line)
+
+            if match:
                 try:
-                    parts = line.split()
-                    for i, part in enumerate(parts):
-                        if 'Iteration' in part and i + 1 < len(parts):
-                            current = int(parts[i + 1].strip(':'))
+                    iteration = match.group(1)
+                    percentage = float(match.group(2))
+                    iter_time = match.group(3)
+                    eta = match.group(4).strip()
+                    rays_per_sec = match.group(5)
+
+                    # Update job progress (20-90% range for training)
+                    job['progress'] = min(20 + int(percentage * 0.7), 90)
+
+                    # Store detailed metrics
+                    if 'metrics' not in job:
+                        job['metrics'] = {}
+
+                    job['metrics']['iteration'] = f"{iteration}/{iterations}"
+                    job['metrics']['percentage'] = f"{percentage:.1f}%"
+                    job['metrics']['iter_time'] = iter_time
+                    job['metrics']['eta'] = eta
+                    job['metrics']['rays_per_sec'] = f"{rays_per_sec} rays/s"
+
+                except Exception as e:
+                    print(f"Error parsing training metrics: {e}")
+
+            # Fallback: simple iteration parsing
+            elif 'Step' in line or 'iteration' in line.lower():
+                try:
+                    # Try to find any number that could be an iteration
+                    numbers = re.findall(r'\b(\d+)\b', line)
+                    if numbers:
+                        current = int(numbers[0])
+                        if current <= iterations:
                             progress = 20 + int((current / iterations) * 70)
                             job['progress'] = min(progress, 90)
-                            break
                 except:
                     pass
 
