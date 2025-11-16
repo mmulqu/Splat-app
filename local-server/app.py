@@ -328,18 +328,30 @@ def get_job_status(job_id):
 
 @app.route('/api/models/<project_id>/<filename>', methods=['GET'])
 def download_model(project_id, filename):
-    """Download processed model"""
+    """Download or view processed model"""
     try:
         model_path = OUTPUT_FOLDER / project_id / filename
         if not model_path.exists():
             return jsonify({'error': 'Model not found'}), 404
 
-        return send_file(
-            model_path,
-            mimetype='application/octet-stream',
-            as_attachment=True,
-            download_name=filename
-        )
+        # Check if this is a download request or viewer request
+        download = request.args.get('download', 'false').lower() == 'true'
+
+        if download:
+            # Force download
+            return send_file(
+                model_path,
+                mimetype='application/octet-stream',
+                as_attachment=True,
+                download_name=filename
+            )
+        else:
+            # Serve for viewer (allow browser to load without forcing download)
+            return send_file(
+                model_path,
+                mimetype='application/octet-stream',
+                as_attachment=False
+            )
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

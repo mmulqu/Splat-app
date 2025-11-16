@@ -217,6 +217,33 @@
             margin-bottom: 20px;
         }
 
+        .viewer-container {
+            width: 100%;
+            height: 600px;
+            background: #000;
+            border-radius: 12px;
+            margin: 20px 0;
+            position: relative;
+            overflow: hidden;
+        }
+
+        #splatCanvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        .viewer-controls {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 8px;
+            color: white;
+            font-size: 12px;
+        }
+
         .download-btn {
             background: #28a745;
             display: inline-block;
@@ -312,12 +339,34 @@
 
         <div class="card result-container" id="resultContainer">
             <h3>Processing Complete!</h3>
-            <p>Your 3D model is ready for download</p>
+            <p>Your 3D Gaussian Splat model is ready</p>
+
+            <div class="viewer-container">
+                <canvas id="splatCanvas"></canvas>
+                <div class="viewer-controls">
+                    🖱️ Left Click: Rotate<br>
+                    🖱️ Right Click: Pan<br>
+                    🖱️ Scroll: Zoom
+                </div>
+            </div>
+
             <a class="btn download-btn" id="downloadBtn" download>Download 3D Model (.ply)</a>
         </div>
     </div>
 
-    <script>
+    <script type="importmap">
+        {
+            "imports": {
+                "gsplat": "https://cdn.jsdelivr.net/npm/gsplat@latest/dist/gsplat.module.js"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as SPLAT from 'gsplat';
+
+        // Make SPLAT available globally
+        window.SPLAT = SPLAT;
         let selectedFiles = [];
         let projectId = null;
         let jobId = null;
@@ -553,13 +602,63 @@
             errorEl.style.display = 'block';
         }
 
-        function showResult(modelUrl) {
+        async function showResult(modelUrl) {
             document.getElementById('processingCard').style.display = 'none';
             const resultContainer = document.getElementById('resultContainer');
             resultContainer.style.display = 'block';
 
             const downloadBtn = document.getElementById('downloadBtn');
-            downloadBtn.href = modelUrl;
+            downloadBtn.href = modelUrl + '?download=true';
+
+            // Initialize 3D viewer (without download parameter)
+            await initViewer(modelUrl);
+        }
+
+        // Initialize gsplat viewer
+        async function initViewer(plyUrl) {
+            try {
+                const canvas = document.getElementById('splatCanvas');
+                const renderer = new window.SPLAT.WebGLRenderer(canvas);
+                const scene = new window.SPLAT.Scene();
+                const camera = new window.SPLAT.Camera();
+                const controls = new window.SPLAT.OrbitControls(camera, canvas);
+
+                // Load the PLY file
+                updateStatus('Loading 3D model into viewer...');
+                await window.SPLAT.PLYLoader.LoadAsync(plyUrl, scene, (progress) => {
+                    console.log('Loading model:', Math.round(progress * 100) + '%');
+                });
+
+                // Set up camera position
+                camera.position.set(0, 0, 5);
+                controls.update();
+
+                // Animation loop
+                function animate() {
+                    requestAnimationFrame(animate);
+                    controls.update();
+                    renderer.render(scene, camera);
+                }
+
+                // Handle canvas resize
+                function handleResize() {
+                    const container = canvas.parentElement;
+                    const width = container.clientWidth;
+                    const height = container.clientHeight;
+                    camera.aspect = width / height;
+                    camera.updateProjectionMatrix();
+                    renderer.setSize(width, height);
+                }
+
+                window.addEventListener('resize', handleResize);
+                handleResize();
+                animate();
+
+                updateStatus('3D viewer ready!');
+            } catch (error) {
+                console.error('Failed to initialize viewer:', error);
+                updateStatus('Viewer failed to load. You can still download the model.');
+            }
         }
 
         // Initialize
