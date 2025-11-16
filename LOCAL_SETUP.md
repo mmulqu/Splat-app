@@ -59,25 +59,27 @@ cd Splat-app
 git checkout claude/test-local-version-01GHGeaaWK36moVZmMuCuc1p
 ```
 
-### 3. Pull the Nerfstudio Docker Image
+### 3. Build the Docker Image
 
 ```bash
-# Pull the pre-built nerfstudio image (much faster than building!)
-docker-compose pull
+# Build the image (extends Nerfstudio base image)
+docker-compose build
 ```
 
+**Build Time:**
+- **First build**: ~5 minutes (pulls Nerfstudio + installs Flask)
+- **Subsequent builds**: ~30 seconds (cached)
+
 **Why Nerfstudio?**
-- ✅ **Pre-built** - No 15-30 minute compile time!
+- ✅ **Fast setup** - Extends pre-built nerfstudio image
 - ✅ **Optimized** - Already compiled for your RTX 4060 (CUDA 89)
 - ✅ **Battle-tested** - Used by thousands of researchers
 - ✅ **Splatfacto** - State-of-the-art Gaussian Splatting implementation
 - ✅ **CUDA 11.8** - Perfect for your GPU
 
 The image includes:
-- CUDA 11.8 and cuDNN
-- COLMAP (pre-compiled)
-- PyTorch with CUDA support
-- Nerfstudio with Splatfacto
+- Nerfstudio base (CUDA 11.8, COLMAP, PyTorch, Splatfacto)
+- Flask web server for image uploads
 - All necessary dependencies
 
 ### 4. Start the Service

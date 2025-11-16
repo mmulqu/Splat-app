@@ -66,14 +66,16 @@ echo ""
 echo "Creating data directories..."
 mkdir -p ./local-data/uploads
 mkdir -p ./local-data/outputs
+mkdir -p ./local-data/cache
 echo "✓ Data directories created"
 
 echo ""
-echo "Pulling Nerfstudio Docker image (pre-built, optimized for your GPU)..."
-echo "This is much faster than building from scratch! ⚡"
+echo "Building Docker image (extends Nerfstudio with Flask web server)..."
+echo "First build: ~5 minutes (pulls Nerfstudio base image + adds Flask)"
+echo "Subsequent builds: ~30 seconds (cached) ⚡"
 echo ""
 
-docker-compose pull
+docker-compose build
 
 echo ""
 echo "════════════════════════════════════════════════════════════"
