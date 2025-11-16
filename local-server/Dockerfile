@@ -12,9 +12,6 @@ RUN python3 -m pip install --no-cache-dir \
 # Create necessary directories
 RUN mkdir -p /workspace/uploads /workspace/outputs /app
 
-# Switch back to the user that nerfstudio expects
-USER user
-
 # Set working directory
 WORKDIR /app
 
