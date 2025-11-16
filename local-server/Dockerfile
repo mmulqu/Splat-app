@@ -4,7 +4,7 @@ FROM ghcr.io/nerfstudio-project/nerfstudio:1.1.3
 USER root
 
 # Install Flask and dependencies for the web server
-RUN pip install --no-cache-dir \
+RUN pip3 install --no-cache-dir \
     Flask==3.0.0 \
     Flask-CORS==4.0.0 \
     Werkzeug==3.0.1
