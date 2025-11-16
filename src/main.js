@@ -2,7 +2,7 @@ import { openDB } from 'idb';
 import { optimizeImage, batchOptimizeImages, calculateSavings, formatBytes, detectBlur, getBlurStatistics, detectDuplicates, removeDuplicates } from './image-utils.js';
 
 // Configuration
-const API_ENDPOINT = import.meta.env.VITE_API_ENDPOINT || '/api';
+const API_ENDPOINT = import.meta.env.VITE_API_ENDPOINT || 'https://splat-app-worker.intrinsic3141.workers.dev';
 
 // IndexedDB setup
 let db;
