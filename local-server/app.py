@@ -41,7 +41,7 @@ def allowed_file(filename):
 @app.route('/')
 def index():
     """Serve the local upload interface"""
-    return send_file('../local-server/index.html')
+    return send_file('index.html')
 
 
 @app.route('/api/health', methods=['GET'])
