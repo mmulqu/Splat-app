@@ -1,14 +1,15 @@
 # Local Gaussian Splatting Setup 🎨
 
-This guide will help you set up and run Gaussian Splatting locally on your machine with GPU support.
+This guide will help you set up and run Gaussian Splatting locally on your machine with GPU support using **Nerfstudio**.
 
 ## Overview
 
 The local version allows you to:
 - Upload images directly from your PC through a web interface
-- Process them locally using your GPU
+- Process them locally using your GPU with **Nerfstudio's Splatfacto**
 - Create 3D Gaussian Splat models without relying on cloud services
 - No API keys, no cloud costs, complete local control
+- Uses the official **Nerfstudio Docker image** - optimized and battle-tested
 
 ## Prerequisites
 
@@ -58,19 +59,26 @@ cd Splat-app
 git checkout claude/test-local-version-01GHGeaaWK36moVZmMuCuc1p
 ```
 
-### 3. Build the Docker Image
+### 3. Pull the Nerfstudio Docker Image
 
 ```bash
-# Build the image (this will take 15-30 minutes on first build)
-docker-compose build
+# Pull the pre-built nerfstudio image (much faster than building!)
+docker-compose pull
 ```
 
-The build process:
-- Installs CUDA 11.8 and cuDNN
-- Compiles COLMAP from source
-- Installs PyTorch with CUDA support
-- Clones and sets up Gaussian Splatting
-- Installs the Flask web server
+**Why Nerfstudio?**
+- ✅ **Pre-built** - No 15-30 minute compile time!
+- ✅ **Optimized** - Already compiled for your RTX 4060 (CUDA 89)
+- ✅ **Battle-tested** - Used by thousands of researchers
+- ✅ **Splatfacto** - State-of-the-art Gaussian Splatting implementation
+- ✅ **CUDA 11.8** - Perfect for your GPU
+
+The image includes:
+- CUDA 11.8 and cuDNN
+- COLMAP (pre-compiled)
+- PyTorch with CUDA support
+- Nerfstudio with Splatfacto
+- All necessary dependencies
 
 ### 4. Start the Service
 
@@ -91,7 +99,8 @@ docker-compose down
 
 1. Once the container is running, open your browser and navigate to:
    ```
-   http://localhost:5000
+   http://localhost:5000 - Main upload interface
+   http://localhost:7007 - Nerfstudio viewer (optional, for live training visualization)
    ```
 
 2. You should see the **Local Gaussian Splatting** interface
@@ -102,11 +111,11 @@ docker-compose down
    - Supported formats: JPG, PNG, WebP
    - Recommended: 10-50 images for best results
 
-4. **Choose Quality**:
-   - **Preview** (~5 min): 3,000 iterations - quick test
-   - **Standard** (~15 min): 7,000 iterations - recommended
-   - **High** (~30 min): 15,000 iterations - better quality
-   - **Ultra** (~60 min): 30,000 iterations - maximum quality
+4. **Choose Quality** (Nerfstudio Splatfacto):
+   - **Preview** (~10 min): 7,000 iterations - quick test
+   - **Standard** (~20 min): 15,000 iterations - recommended
+   - **High** (~30-40 min): 30,000 iterations - high quality
+   - **Ultra** (~60-90 min): 50,000 iterations - maximum quality
 
 5. **Start Processing**:
    - Click "Start Processing"
@@ -327,24 +336,30 @@ docker-compose down -v
                   │
                   ▼
 ┌─────────────────────────────────────────────────┐
-│  Processing Handler (local_handler.py)          │
+│  Nerfstudio Handler (nerfstudio_handler.py)    │
 │  ┌──────────────────────────────────────────┐  │
-│  │  1. COLMAP (Structure from Motion)       │  │
+│  │  1. ns-process-data (COLMAP SfM)         │  │
 │  │     - Feature extraction                 │  │
 │  │     - Feature matching                   │  │
 │  │     - Sparse reconstruction              │  │
+│  │     - Nerfstudio data format             │  │
 │  └──────────────────────────────────────────┘  │
 │  ┌──────────────────────────────────────────┐  │
-│  │  2. Gaussian Splatting Training          │  │
-│  │     - Initialize point cloud             │  │
-│  │     - Train with GPU                     │  │
-│  │     - Generate .ply model                │  │
+│  │  2. ns-train splatfacto                  │  │
+│  │     - Initialize Gaussian point cloud    │  │
+│  │     - Train with GPU optimization        │  │
+│  │     - Splatfacto-specific improvements   │  │
+│  └──────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────┐  │
+│  │  3. ns-export gaussian-splat             │  │
+│  │     - Export to .ply format              │  │
+│  │     - Generate 3D model file             │  │
 │  └──────────────────────────────────────────┘  │
 └─────────────────┬───────────────────────────────┘
                   │
                   ▼
 ┌─────────────────────────────────────────────────┐
-│  Your GPU (CUDA 11.8)                           │
+│  Your GPU - RTX 4060 (CUDA 11.8, Arch 89)      │
 └─────────────────────────────────────────────────┘
 ```
 

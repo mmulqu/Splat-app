@@ -4,7 +4,8 @@
 set -e
 
 echo "╔════════════════════════════════════════════════════════════╗"
-echo "║    Local Gaussian Splatting - Quick Start                 ║"
+echo "║    Local Gaussian Splatting with Nerfstudio               ║"
+echo "║    Quick Start                                             ║"
 echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
 
@@ -68,11 +69,11 @@ mkdir -p ./local-data/outputs
 echo "✓ Data directories created"
 
 echo ""
-echo "Building Docker image (this may take 15-30 minutes on first run)..."
-echo "You can grab a coffee ☕"
+echo "Pulling Nerfstudio Docker image (pre-built, optimized for your GPU)..."
+echo "This is much faster than building from scratch! ⚡"
 echo ""
 
-docker-compose build
+docker-compose pull
 
 echo ""
 echo "════════════════════════════════════════════════════════════"
@@ -91,14 +92,16 @@ if curl -s http://localhost:5000/api/health > /dev/null; then
     echo "║                    🎉 SUCCESS! 🎉                         ║"
     echo "╚════════════════════════════════════════════════════════════╝"
     echo ""
-    echo "  Local Gaussian Splatting is now running!"
+    echo "  Local Gaussian Splatting with Nerfstudio is now running!"
     echo ""
-    echo "  🌐 Web Interface:  http://localhost:5000"
-    echo "  📊 API Health:     http://localhost:5000/api/health"
+    echo "  🌐 Web Interface:      http://localhost:5000"
+    echo "  👁️  Nerfstudio Viewer:  http://localhost:7007"
+    echo "  📊 API Health:         http://localhost:5000/api/health"
     echo ""
     echo "  📁 Data Location:"
     echo "     - Uploads:  ./local-data/uploads/"
     echo "     - Outputs:  ./local-data/outputs/"
+    echo "     - Cache:    ./local-data/cache/"
     echo ""
     echo "  📝 View Logs:      docker-compose logs -f"
     echo "  🛑 Stop Service:   docker-compose down"

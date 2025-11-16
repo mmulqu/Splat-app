@@ -156,35 +156,27 @@ def list_projects():
 
 @app.route('/api/quality-presets', methods=['GET'])
 def get_quality_presets():
-    """Get quality presets for processing"""
+    """Get quality presets for processing (nerfstudio splatfacto)"""
     presets = {
         'preview': {
             'name': 'Preview',
-            'iterations': 3000,
-            'description': 'Fast preview quality (~5 minutes)',
-            'position_lr_init': 0.00016,
-            'position_lr_final': 0.0000016,
+            'iterations': 7000,
+            'description': 'Fast preview quality (~10 minutes)',
         },
         'standard': {
             'name': 'Standard',
-            'iterations': 7000,
-            'description': 'Recommended quality (~15 minutes)',
-            'position_lr_init': 0.00016,
-            'position_lr_final': 0.0000016,
+            'iterations': 15000,
+            'description': 'Recommended quality (~20 minutes)',
         },
         'high': {
             'name': 'High',
-            'iterations': 15000,
-            'description': 'High quality (~30 minutes)',
-            'position_lr_init': 0.00016,
-            'position_lr_final': 0.0000016,
+            'iterations': 30000,
+            'description': 'High quality (default, ~30-40 minutes)',
         },
         'ultra': {
             'name': 'Ultra',
-            'iterations': 30000,
-            'description': 'Maximum quality (~60 minutes)',
-            'position_lr_init': 0.00016,
-            'position_lr_final': 0.0000016,
+            'iterations': 50000,
+            'description': 'Maximum quality (~60-90 minutes)',
         }
     }
     return jsonify(presets)
@@ -253,19 +245,18 @@ def process_gaussian_splatting(job_id, project_id, quality_preset):
         output_dir = OUTPUT_FOLDER / project_id
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Get quality parameters
+        # Get quality parameters (nerfstudio splatfacto)
         presets = {
-            'preview': {'iterations': 3000},
-            'standard': {'iterations': 7000},
-            'high': {'iterations': 15000},
-            'ultra': {'iterations': 30000}
+            'preview': {'iterations': 7000},
+            'standard': {'iterations': 15000},
+            'high': {'iterations': 30000},
+            'ultra': {'iterations': 50000}
         }
-        iterations = presets.get(quality_preset, {}).get('iterations', 7000)
+        iterations = presets.get(quality_preset, {}).get('iterations', 30000)
 
         job['progress'] = 20
 
-        # Run the processing script (assumes we're inside Docker container)
-        # The handler.py script is already set up for this
+        # Run the nerfstudio processing script
         cmd = [
             'python3', '/app/handler.py',
             '--input_dir', str(input_dir),
