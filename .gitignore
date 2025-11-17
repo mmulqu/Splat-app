@@ -52,3 +52,18 @@ wrangler.toml.backup
 # Local development
 .cache/
 .parcel-cache/
+
+# Local GPU processing data
+local-data/
+*.ply
+*.splat
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+.venv/
+venv/
