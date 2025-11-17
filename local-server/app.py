@@ -278,11 +278,17 @@ def process_gaussian_splatting(job_id, project_id, quality_preset):
         for line in process.stdout:
             print(f"[{job_id}] {line.rstrip()}")
             
+            # Strip Docker log prefix if present
+            clean_line = line
+            if '|' in line:
+                # Remove everything before and including the pipe
+                clean_line = line.split('|', 1)[1].strip()
+            
             # Parse nerfstudio training output
-            # Format: [job_id] 2930 (9.77%)  39.238 ms  17 m, 42 s  18.36 M
+            # Format: [job_id] 800 (11.43%)  44.320 ms  4 m, 34 s  18.03 M
             # Pattern: iteration (percentage)  iter_time  eta  rays_per_sec
             training_pattern = r'\[[\w-]+\]\s+(\d+)\s+\(([\d.]+)%\)\s+([\d.]+ ms)\s+((?:\d+ [msh],?\s*)+)\s+([\d.]+ [MK])'
-            match = re.search(training_pattern, line)
+            match = re.search(training_pattern, clean_line)
             
             if match:
                 try:
@@ -303,19 +309,22 @@ def process_gaussian_splatting(job_id, project_id, quality_preset):
                     job['metrics']['iter_time'] = iter_time
                     job['metrics']['eta'] = eta
                     job['metrics']['rays_per_sec'] = f"{rays_per_sec} rays/s"
+                    
+                    print(f"✓ Parsed metrics - Iteration: {iteration}, Progress: {percentage}%")
                 except Exception as e:
                     print(f"Error parsing training metrics: {e}")
             
             # Fallback: simple iteration parsing
-            elif 'Step' in line or 'iteration' in line.lower():
+            elif 'Step' in clean_line or 'iteration' in clean_line.lower():
                 try:
                     # Try to find any number that could be an iteration
-                    numbers = re.findall(r'\b(\d+)\b', line)
+                    numbers = re.findall(r'\b(\d+)\b', clean_line)
                     if numbers:
                         current = int(numbers[0])
                         if current <= iterations:
                             progress = 20 + int((current / iterations) * 70)
                             job['progress'] = min(progress, 90)
+                            print(f"✓ Fallback progress update: {progress}%")
                 except:
                     pass
 
