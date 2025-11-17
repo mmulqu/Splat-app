@@ -16,13 +16,19 @@ from flask import Flask, request, jsonify, send_file, send_from_directory
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 from PIL import Image
-import pillow_heif
+
+# Try to import HEIF support (optional)
+try:
+    import pillow_heif
+    pillow_heif.register_heif_opener()
+    HEIF_SUPPORT = True
+    print("✓ HEIF/HEIC support enabled")
+except ImportError:
+    HEIF_SUPPORT = False
+    print("⚠ HEIF/HEIC support not available (pillow-heif not installed)")
 
 app = Flask(__name__, static_folder='../public', static_url_path='')
 CORS(app)  # Enable CORS for local development
-
-# Register HEIF opener with PIL
-pillow_heif.register_heif_opener()
 
 # Configuration
 UPLOAD_FOLDER = Path('/workspace/uploads')
@@ -125,7 +131,7 @@ def upload_photos(project_id):
                 indexed_filename = f"{idx:03d}_{filename}"
 
                 # Check if HEIC/HEIF file needs conversion
-                if file_ext in ['heic', 'heif']:
+                if file_ext in ['heic', 'heif'] and HEIF_SUPPORT:
                     # Convert HEIC to JPEG
                     print(f"Converting HEIC image: {filename}")
 
@@ -154,6 +160,10 @@ def upload_photos(project_id):
                         # If conversion fails, keep original
                         temp_path.rename(project_dir / indexed_filename)
                         filepath = project_dir / indexed_filename
+                elif file_ext in ['heic', 'heif'] and not HEIF_SUPPORT:
+                    # HEIC files not supported without pillow-heif
+                    print(f"⚠ Skipping HEIC file (not supported): {filename}")
+                    continue
                 else:
                     # Save non-HEIC files directly
                     filepath = project_dir / indexed_filename
