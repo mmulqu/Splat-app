@@ -606,10 +606,17 @@
 
         // Handle uploaded image files
         function handleFiles(files) {
-            selectedFiles = Array.from(files).filter(file =>
-                file.type.startsWith('image/')
-            );
+            selectedFiles = Array.from(files).filter(file => {
+                // Check both MIME type and file extension for better compatibility
+                const isImageType = file.type.startsWith('image/');
+                const extension = file.name.toLowerCase().split('.').pop();
+                const validExtensions = ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'];
+                const hasValidExtension = validExtensions.includes(extension);
 
+                return isImageType || hasValidExtension;
+            });
+
+            console.log('Selected files:', selectedFiles.length, selectedFiles);
             displayFiles();
 
             if (selectedFiles.length >= 5) {
