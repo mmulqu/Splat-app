@@ -116,6 +116,27 @@
 
         .file-list {
             margin-top: 20px;
+            max-height: 400px;
+            overflow-y: auto;
+            padding-right: 10px;
+        }
+
+        .file-list::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .file-list::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+
+        .file-list::-webkit-scrollbar-thumb {
+            background: #667eea;
+            border-radius: 10px;
+        }
+
+        .file-list::-webkit-scrollbar-thumb:hover {
+            background: #764ba2;
         }
 
         .file-item {
@@ -544,6 +565,8 @@
         });
 
         fileInput.addEventListener('change', (e) => {
+            console.log('File input changed! Raw files:', e.target.files);
+            alert(`Files selected: ${e.target.files.length} files`);
             handleFiles(e.target.files);
         });
 
@@ -606,42 +629,75 @@
 
         // Handle uploaded image files
         function handleFiles(files) {
-            selectedFiles = Array.from(files).filter(file => {
+            console.log('=== handleFiles called ===');
+            console.log('Input files:', files);
+            console.log('Files length:', files.length);
+
+            const filesArray = Array.from(files);
+            console.log('Files array:', filesArray);
+
+            selectedFiles = filesArray.filter(file => {
+                console.log('Checking file:', file.name, 'Type:', file.type);
+
                 // Check both MIME type and file extension for better compatibility
                 const isImageType = file.type.startsWith('image/');
                 const extension = file.name.toLowerCase().split('.').pop();
                 const validExtensions = ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'];
                 const hasValidExtension = validExtensions.includes(extension);
 
+                console.log('  - isImageType:', isImageType);
+                console.log('  - extension:', extension);
+                console.log('  - hasValidExtension:', hasValidExtension);
+                console.log('  - passes filter:', isImageType || hasValidExtension);
+
                 return isImageType || hasValidExtension;
             });
 
-            console.log('Selected files:', selectedFiles.length, selectedFiles);
+            console.log('Final selected files:', selectedFiles.length, selectedFiles);
+
             displayFiles();
 
             if (selectedFiles.length >= 5) {
+                console.log('Showing processing card');
                 document.getElementById('processingCard').style.display = 'block';
+            } else {
+                console.log('Not enough files:', selectedFiles.length, '< 5');
             }
         }
 
         // Display selected files
         function displayFiles() {
+            console.log('=== displayFiles called ===');
+            console.log('selectedFiles:', selectedFiles);
+
             const fileList = document.getElementById('fileList');
+            console.log('fileList element:', fileList);
+
             fileList.innerHTML = '';
 
-            if (selectedFiles.length === 0) return;
+            if (selectedFiles.length === 0) {
+                console.log('No files to display');
+                return;
+            }
 
             const header = document.createElement('h3');
             header.textContent = `${selectedFiles.length} image${selectedFiles.length > 1 ? 's' : ''} selected`;
             header.style.marginBottom = '15px';
+            header.style.color = '#333';
             fileList.appendChild(header);
+            console.log('Added header');
 
             selectedFiles.forEach((file, index) => {
+                console.log('Adding file to display:', index, file.name);
+
                 const item = document.createElement('div');
                 item.className = 'file-item';
 
                 const img = document.createElement('img');
                 img.src = URL.createObjectURL(file);
+                img.onerror = (e) => {
+                    console.error('Error loading image preview:', file.name, e);
+                };
                 item.appendChild(img);
 
                 const info = document.createElement('div');
@@ -654,6 +710,8 @@
 
                 fileList.appendChild(item);
             });
+
+            console.log('Display complete. Total items:', selectedFiles.length);
         }
 
         // Quality selector
