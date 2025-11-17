@@ -324,6 +324,20 @@
         </div>
 
         <div class="card">
+            <h2>Quick View: Upload Existing PLY File</h2>
+            <p style="color: #666; margin: 10px 0 20px 0;">Already have a .ply file? Upload it to view instantly (no processing needed)</p>
+
+            <div class="upload-zone" id="plyUploadZone">
+                <div class="upload-icon">📦</div>
+                <h3>Drag & Drop PLY File Here</h3>
+                <p style="margin: 15px 0;">or</p>
+                <button class="btn" onclick="document.getElementById('plyFileInput').click()">Choose PLY File</button>
+                <input type="file" id="plyFileInput" accept=".ply" style="display: none;">
+                <p style="margin-top: 20px; color: #666; font-size: 14px;">Gaussian Splat .ply files only</p>
+            </div>
+        </div>
+
+        <div class="card">
             <h2>Step 1: Upload Images</h2>
             <p style="color: #666; margin: 10px 0 20px 0;">Upload at least 5 images of your scene from different angles</p>
 
@@ -487,7 +501,30 @@
             }
         }
 
-        // Setup upload zone
+        // Setup PLY upload zone
+        const plyUploadZone = document.getElementById('plyUploadZone');
+        const plyFileInput = document.getElementById('plyFileInput');
+
+        plyUploadZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            plyUploadZone.classList.add('dragging');
+        });
+
+        plyUploadZone.addEventListener('dragleave', () => {
+            plyUploadZone.classList.remove('dragging');
+        });
+
+        plyUploadZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            plyUploadZone.classList.remove('dragging');
+            handlePlyFile(e.dataTransfer.files);
+        });
+
+        plyFileInput.addEventListener('change', (e) => {
+            handlePlyFile(e.target.files);
+        });
+
+        // Setup image upload zone
         const uploadZone = document.getElementById('uploadZone');
         const fileInput = document.getElementById('fileInput');
 
@@ -510,7 +547,64 @@
             handleFiles(e.target.files);
         });
 
-        // Handle uploaded files
+        // Handle PLY file upload
+        async function handlePlyFile(files) {
+            if (files.length === 0) return;
+
+            const file = files[0];
+            if (!file.name.toLowerCase().endsWith('.ply')) {
+                alert('Please upload a .ply file');
+                return;
+            }
+
+            try {
+                // Upload PLY to backend
+                const formData = new FormData();
+                formData.append('file', file);
+
+                const response = await fetch('/api/upload-ply', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error('Upload failed');
+                }
+
+                const result = await response.json();
+
+                // Show viewer with uploaded PLY
+                showPlyViewer(result.url, file.name);
+
+            } catch (error) {
+                console.error('PLY upload error:', error);
+                alert('Failed to upload PLY file: ' + error.message);
+            }
+        }
+
+        // Show PLY viewer
+        function showPlyViewer(plyUrl, filename) {
+            // Hide other cards
+            document.getElementById('processingCard').style.display = 'none';
+
+            // Show result container
+            const resultContainer = document.getElementById('resultContainer');
+            resultContainer.style.display = 'block';
+
+            // Update title
+            resultContainer.querySelector('h3').textContent = 'Viewing: ' + filename;
+            resultContainer.querySelector('p').textContent = 'Uploaded PLY file';
+
+            // Hide download button or update it
+            const downloadBtn = document.getElementById('downloadBtn');
+            downloadBtn.href = plyUrl + '?download=true';
+            downloadBtn.style.display = 'inline-block';
+
+            // Initialize viewer
+            initViewer(plyUrl);
+        }
+
+        // Handle uploaded image files
         function handleFiles(files) {
             selectedFiles = Array.from(files).filter(file =>
                 file.type.startsWith('image/')

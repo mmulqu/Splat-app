@@ -27,12 +27,14 @@ pillow_heif.register_heif_opener()
 # Configuration
 UPLOAD_FOLDER = Path('/workspace/uploads')
 OUTPUT_FOLDER = Path('/workspace/outputs')
+VIEWER_FOLDER = Path('/workspace/viewer')  # For uploaded PLY files
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'webp', 'heic', 'heif'}
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 
 # Create necessary directories
 UPLOAD_FOLDER.mkdir(parents=True, exist_ok=True)
 OUTPUT_FOLDER.mkdir(parents=True, exist_ok=True)
+VIEWER_FOLDER.mkdir(parents=True, exist_ok=True)
 
 # In-memory job storage (for local testing)
 jobs = {}
@@ -434,6 +436,70 @@ def download_model(project_id, filename):
             # Serve for viewer (allow browser to load without forcing download)
             return send_file(
                 model_path,
+                mimetype='application/octet-stream',
+                as_attachment=False
+            )
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/upload-ply', methods=['POST'])
+def upload_ply():
+    """Upload a PLY file for immediate viewing"""
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file provided'}), 400
+
+        file = request.files['file']
+        if not file or file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+
+        # Check if it's a PLY file
+        if not file.filename.lower().endswith('.ply'):
+            return jsonify({'error': 'Only .ply files are supported'}), 400
+
+        # Generate unique filename
+        filename = secure_filename(file.filename)
+        unique_id = str(uuid.uuid4())[:8]
+        unique_filename = f"{unique_id}_{filename}"
+
+        # Save to viewer folder
+        filepath = VIEWER_FOLDER / unique_filename
+        file.save(filepath)
+
+        # Return URL for viewing
+        return jsonify({
+            'success': True,
+            'filename': filename,
+            'url': f'/api/viewer/{unique_filename}',
+            'size': filepath.stat().st_size
+        }), 200
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/viewer/<filename>', methods=['GET'])
+def serve_viewer_ply(filename):
+    """Serve uploaded PLY file for viewing"""
+    try:
+        file_path = VIEWER_FOLDER / filename
+        if not file_path.exists():
+            return jsonify({'error': 'File not found'}), 404
+
+        # Check if this is a download request
+        download = request.args.get('download', 'false').lower() == 'true'
+
+        if download:
+            return send_file(
+                file_path,
+                mimetype='application/octet-stream',
+                as_attachment=True,
+                download_name=filename
+            )
+        else:
+            return send_file(
+                file_path,
                 mimetype='application/octet-stream',
                 as_attachment=False
             )

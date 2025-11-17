@@ -18,6 +18,7 @@ services:
       # Mount volumes for persistent storage
       - ./local-data/uploads:/workspace/uploads
       - ./local-data/outputs:/workspace/outputs
+      - ./local-data/viewer:/workspace/viewer
       # Cache directory to avoid re-downloading models
       - ./local-data/cache:/home/user/.cache/
       # Optional: Mount your own images directory
