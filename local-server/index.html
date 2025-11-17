@@ -235,6 +235,48 @@
         #fileInput {
             display: none;
         }
+
+        .detailed-progress {
+            display: none;
+            margin-top: 20px;
+            padding: 20px;
+            background: #f8f9ff;
+            border-radius: 8px;
+        }
+
+        .detailed-progress h4 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 18px;
+        }
+
+        .progress-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+
+        .progress-stat {
+            padding: 15px;
+            background: white;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+        }
+
+        .progress-stat-label {
+            font-size: 12px;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+
+        .progress-stat-value {
+            font-size: 20px;
+            color: #667eea;
+            font-weight: 700;
+        }
     </style>
 </head>
 <body>
@@ -305,6 +347,28 @@
                     <div class="progress-fill" id="progressFill">0%</div>
                 </div>
                 <div class="status-message" id="statusMessage">Initializing...</div>
+            </div>
+
+            <div class="detailed-progress" id="detailedProgress">
+                <h4>Training Metrics</h4>
+                <div class="progress-stats">
+                    <div class="progress-stat">
+                        <div class="progress-stat-label">Iteration</div>
+                        <div class="progress-stat-value" id="statIteration">-</div>
+                    </div>
+                    <div class="progress-stat">
+                        <div class="progress-stat-label">Time per Iteration</div>
+                        <div class="progress-stat-value" id="statIterTime">-</div>
+                    </div>
+                    <div class="progress-stat">
+                        <div class="progress-stat-label">Estimated Time Left</div>
+                        <div class="progress-stat-value" id="statETA">-</div>
+                    </div>
+                    <div class="progress-stat">
+                        <div class="progress-stat-label">Training Speed</div>
+                        <div class="progress-stat-value" id="statRaysPerSec">-</div>
+                    </div>
+                </div>
             </div>
 
             <div class="error" id="errorMessage"></div>
@@ -506,11 +570,18 @@
                 updateProgress(job.progress || 0);
                 updateStatus(getStatusMessage(job));
 
+                // Update detailed metrics if available
+                if (job.metrics) {
+                    updateDetailedProgress(job.metrics);
+                }
+
                 if (job.status === 'completed') {
                     clearInterval(statusInterval);
+                    document.getElementById('detailedProgress').style.display = 'none';
                     showResult(job.model_url);
                 } else if (job.status === 'failed') {
                     clearInterval(statusInterval);
+                    document.getElementById('detailedProgress').style.display = 'none';
                     showError(job.error || 'Processing failed');
                     document.getElementById('startBtn').disabled = false;
                     document.getElementById('startBtn').textContent = 'Start Processing';
@@ -545,6 +616,24 @@
 
         function updateStatus(message) {
             document.getElementById('statusMessage').textContent = message;
+        }
+
+        function updateDetailedProgress(metrics) {
+            const detailedProgress = document.getElementById('detailedProgress');
+            detailedProgress.style.display = 'block';
+            
+            if (metrics.iteration) {
+                document.getElementById('statIteration').textContent = metrics.iteration;
+            }
+            if (metrics.iter_time) {
+                document.getElementById('statIterTime').textContent = metrics.iter_time;
+            }
+            if (metrics.eta) {
+                document.getElementById('statETA').textContent = metrics.eta;
+            }
+            if (metrics.rays_per_sec) {
+                document.getElementById('statRaysPerSec').textContent = metrics.rays_per_sec;
+            }
         }
 
         function showError(message) {
