@@ -340,8 +340,8 @@
         </div>
 
         <div class="card" id="processingCard" style="display: none;">
-            <h2>Step 2: Choose Quality</h2>
-            <p style="color: #666; margin: 10px 0 20px 0;">Select the processing quality (higher quality = longer processing time)</p>
+            <h2>Step 2: Choose Training Iterations</h2>
+            <p style="color: #666; margin: 10px 0 20px 0;">Select a preset or specify custom iteration count (higher = better quality but longer)</p>
 
             <div class="quality-selector">
                 <label class="quality-option">
@@ -372,6 +372,25 @@
                         <p style="font-size: 14px; color: #666; margin-top: 5px;">~60-90 minutes<br>50,000 iterations</p>
                     </div>
                 </label>
+                <label class="quality-option">
+                    <input type="radio" name="quality" value="custom">
+                    <div>
+                        <strong>Custom</strong>
+                        <p style="font-size: 14px; color: #666; margin-top: 5px;">Your choice<br>Specify below</p>
+                    </div>
+                </label>
+            </div>
+
+            <div id="customIterations" style="display: none; margin-top: 20px; background: #f8f9ff; padding: 20px; border-radius: 8px;">
+                <label style="display: block; margin-bottom: 10px; font-weight: 600; color: #333;">
+                    Custom Iteration Count:
+                </label>
+                <input type="number" id="customIterInput" min="1000" max="100000" step="1000" value="30000"
+                       style="width: 100%; padding: 12px; border: 2px solid #667eea; border-radius: 8px; font-size: 16px;">
+                <p style="color: #666; font-size: 13px; margin-top: 10px;">
+                    💡 Recommended range: 7,000 - 50,000<br>
+                    Approximate time: ~2 minutes per 1,000 iterations on RTX 4060
+                </p>
             </div>
 
             <button class="btn" id="startBtn" onclick="startProcessing()" style="width: 100%; margin-top: 20px;">
@@ -544,6 +563,15 @@
                 );
                 option.classList.add('selected');
                 option.querySelector('input').checked = true;
+
+                // Show/hide custom iterations input
+                const customIterDiv = document.getElementById('customIterations');
+                const selectedValue = option.querySelector('input').value;
+                if (selectedValue === 'custom') {
+                    customIterDiv.style.display = 'block';
+                } else {
+                    customIterDiv.style.display = 'none';
+                }
             });
         });
 
@@ -595,13 +623,25 @@
                 const quality = document.querySelector('input[name="quality"]:checked').value;
                 updateStatus('Starting GPU processing...');
 
+                // Prepare request body
+                const requestBody = {
+                    project_id: projectId,
+                    quality: quality
+                };
+
+                // If custom, add custom iteration count
+                if (quality === 'custom') {
+                    const customIter = parseInt(document.getElementById('customIterInput').value);
+                    if (customIter < 1000 || customIter > 100000) {
+                        throw new Error('Custom iterations must be between 1,000 and 100,000');
+                    }
+                    requestBody.custom_iterations = customIter;
+                }
+
                 const processResponse = await fetch('/api/process', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        project_id: projectId,
-                        quality: quality
-                    })
+                    body: JSON.stringify(requestBody)
                 });
                 const job = await processResponse.json();
 

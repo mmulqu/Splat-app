@@ -230,6 +230,7 @@ def start_processing():
         data = request.get_json()
         project_id = data.get('project_id')
         quality_preset = data.get('quality', 'standard')
+        custom_iterations = data.get('custom_iterations', None)
 
         if not project_id or project_id not in projects:
             return jsonify({'error': 'Invalid project_id'}), 400
@@ -239,6 +240,11 @@ def start_processing():
         if project['photo_count'] < 5:
             return jsonify({'error': 'At least 5 photos required'}), 400
 
+        # Validate custom iterations if provided
+        if custom_iterations is not None:
+            if custom_iterations < 1000 or custom_iterations > 100000:
+                return jsonify({'error': 'Custom iterations must be between 1,000 and 100,000'}), 400
+
         # Create job
         job_id = str(uuid.uuid4())
         job = {
@@ -247,6 +253,7 @@ def start_processing():
             'status': 'queued',
             'progress': 0,
             'quality': quality_preset,
+            'custom_iterations': custom_iterations,
             'created_at': datetime.now().isoformat(),
             'started_at': None,
             'completed_at': None,
@@ -262,7 +269,7 @@ def start_processing():
         import threading
         thread = threading.Thread(
             target=process_gaussian_splatting,
-            args=(job_id, project_id, quality_preset)
+            args=(job_id, project_id, quality_preset, custom_iterations)
         )
         thread.daemon = True
         thread.start()
@@ -273,7 +280,7 @@ def start_processing():
         return jsonify({'error': str(e)}), 500
 
 
-def process_gaussian_splatting(job_id, project_id, quality_preset):
+def process_gaussian_splatting(job_id, project_id, quality_preset, custom_iterations=None):
     """Process Gaussian Splatting (runs in background thread)"""
     try:
         job = jobs[job_id]
@@ -286,14 +293,21 @@ def process_gaussian_splatting(job_id, project_id, quality_preset):
         output_dir = OUTPUT_FOLDER / project_id
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Get quality parameters (nerfstudio splatfacto)
-        presets = {
-            'preview': {'iterations': 7000},
-            'standard': {'iterations': 15000},
-            'high': {'iterations': 30000},
-            'ultra': {'iterations': 50000}
-        }
-        iterations = presets.get(quality_preset, {}).get('iterations', 30000)
+        # Determine iteration count
+        if custom_iterations is not None:
+            # Use custom iteration count
+            iterations = custom_iterations
+            print(f"Using custom iteration count: {iterations}")
+        else:
+            # Get quality parameters from presets (nerfstudio splatfacto)
+            presets = {
+                'preview': {'iterations': 7000},
+                'standard': {'iterations': 15000},
+                'high': {'iterations': 30000},
+                'ultra': {'iterations': 50000}
+            }
+            iterations = presets.get(quality_preset, {}).get('iterations', 30000)
+            print(f"Using preset '{quality_preset}': {iterations} iterations")
 
         job['progress'] = 20
 
