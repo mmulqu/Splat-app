@@ -85,7 +85,7 @@ def run_splatfacto_training(data_dir, output_dir, iterations=30000, max_num_iter
         "--data", str(data_dir),
         "--output-dir", str(output_dir),
         "--max-num-iterations", str(max_num_iterations or iterations),
-        "--viewer.quit-on-train-completion", "True",
+        "--viewer.quit-on-train-completion", "False",  # Keep viewer running after training
         "--vis", "viewer+tensorboard",
     ]
 

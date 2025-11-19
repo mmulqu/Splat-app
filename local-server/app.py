@@ -45,6 +45,48 @@ def index():
     return send_file('index.html')
 
 
+@app.route('/viewer/<path:filename>')
+def serve_viewer(filename):
+    """Serve viewer files"""
+    viewer_dir = Path(__file__).parent / 'public' / 'viewer'
+    return send_from_directory(viewer_dir, filename)
+
+
+@app.route('/api/upload-ply', methods=['POST'])
+def upload_ply():
+    """Upload a PLY file for viewing"""
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file provided'}), 400
+        
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+        
+        if not file.filename.endswith('.ply'):
+            return jsonify({'error': 'Only .ply files are supported'}), 400
+        
+        # Create viewer directory in outputs
+        viewer_dir = OUTPUT_FOLDER / 'viewer'
+        viewer_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Generate unique filename
+        file_id = str(uuid.uuid4())
+        filename = f"{file_id}.ply"
+        filepath = viewer_dir / filename
+        
+        # Save file
+        file.save(str(filepath))
+        
+        # Return URL to access the file
+        return jsonify({
+            'success': True,
+            'url': f'/api/models/viewer/{filename}'
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/health', methods=['GET'])
 def health():
     """Health check endpoint"""
@@ -190,6 +232,7 @@ def start_processing():
         data = request.get_json()
         project_id = data.get('project_id')
         quality_preset = data.get('quality', 'standard')
+        custom_iterations = data.get('custom_iterations')
 
         if not project_id or project_id not in projects:
             return jsonify({'error': 'Invalid project_id'}), 400
@@ -207,11 +250,13 @@ def start_processing():
             'status': 'queued',
             'progress': 0,
             'quality': quality_preset,
+            'custom_iterations': custom_iterations,
             'created_at': datetime.now().isoformat(),
             'started_at': None,
             'completed_at': None,
             'error': None,
-            'model_url': None
+            'model_url': None,
+            'logs': []
         }
 
         jobs[job_id] = job
@@ -222,7 +267,7 @@ def start_processing():
         import threading
         thread = threading.Thread(
             target=process_gaussian_splatting,
-            args=(job_id, project_id, quality_preset)
+            args=(job_id, project_id, quality_preset, custom_iterations)
         )
         thread.daemon = True
         thread.start()
@@ -233,7 +278,7 @@ def start_processing():
         return jsonify({'error': str(e)}), 500
 
 
-def process_gaussian_splatting(job_id, project_id, quality_preset):
+def process_gaussian_splatting(job_id, project_id, quality_preset, custom_iterations=None):
     """Process Gaussian Splatting (runs in background thread)"""
     try:
         job = jobs[job_id]
@@ -253,7 +298,12 @@ def process_gaussian_splatting(job_id, project_id, quality_preset):
             'high': {'iterations': 30000},
             'ultra': {'iterations': 50000}
         }
-        iterations = presets.get(quality_preset, {}).get('iterations', 30000)
+        
+        if custom_iterations:
+            iterations = int(custom_iterations)
+            print(f"Using custom iterations: {iterations}")
+        else:
+            iterations = presets.get(quality_preset, {}).get('iterations', 30000)
 
         job['progress'] = 20
 
@@ -277,6 +327,11 @@ def process_gaussian_splatting(job_id, project_id, quality_preset):
         # Monitor progress
         for line in process.stdout:
             print(f"[{job_id}] {line.rstrip()}")
+            
+            # Store logs (keep last 100 lines)
+            job['logs'].append(line.rstrip())
+            if len(job['logs']) > 100:
+                job['logs'].pop(0)
             
             # Strip Docker log prefix if present
             clean_line = line
