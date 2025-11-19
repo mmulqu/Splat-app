@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Local Gaussian Splatting - GPU Processing</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            color: #666;
+            font-size: 16px;
+        }
+
+        .gpu-status {
+            display: inline-block;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+            margin-top: 10px;
+        }
+
+        .gpu-status.available {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .gpu-status.unavailable {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        }
+
+        .upload-zone {
+            border: 3px dashed #667eea;
+            border-radius: 12px;
+            padding: 60px 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            background: #f8f9ff;
+        }
+
+        .upload-zone:hover {
+            border-color: #764ba2;
+            background: #f0f2ff;
+        }
+
+        .upload-zone.dragging {
+            border-color: #764ba2;
+            background: #e8ebff;
+        }
+
+        .upload-icon {
+            font-size: 48px;
+            margin-bottom: 20px;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .file-list {
+            margin-top: 20px;
+        }
+
+        .file-item {
+            display: flex;
+            align-items: center;
+            padding: 12px;
+            background: #f8f9ff;
+            border-radius: 8px;
+            margin-bottom: 8px;
+        }
+
+        .file-item img {
+            width: 60px;
+            height: 60px;
+            object-fit: cover;
+            border-radius: 6px;
+            margin-right: 15px;
+        }
+
+        .file-info {
+            flex: 1;
+        }
+
+        .file-name {
+            font-weight: 600;
+            color: #333;
+        }
+
+        .file-size {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .quality-selector {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+
+        .quality-option {
+            padding: 20px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .quality-option:hover {
+            border-color: #667eea;
+        }
+
+        .quality-option.selected {
+            border-color: #667eea;
+            background: #f8f9ff;
+        }
+
+        .quality-option input {
+            margin-right: 10px;
+        }
+
+        .progress-container {
+            display: none;
+            margin-top: 20px;
+        }
+
+        .progress-bar {
+            height: 30px;
+            background: #e0e0e0;
+            border-radius: 15px;
+            overflow: hidden;
+            margin-bottom: 10px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            width: 0%;
+            transition: width 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+        }
+
+        .status-message {
+            text-align: center;
+            color: #666;
+        }
+
+        .result-container {
+            display: none;
+            text-align: center;
+        }
+
+        .result-container h3 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+
+        .download-btn {
+            background: #28a745;
+            display: inline-block;
+            margin-top: 20px;
+        }
+
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            display: none;
+        }
+
+        #fileInput {
+            display: none;
+        }
+
+        .detailed-progress {
+            display: none;
+            margin-top: 20px;
+            padding: 20px;
+            background: #f8f9ff;
+            border-radius: 8px;
+        }
+
+        .detailed-progress h4 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 18px;
+        }
+
+        .progress-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+
+        .progress-stat {
+            padding: 15px;
+            background: white;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+        }
+
+        .progress-stat-label {
+            font-size: 12px;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+
+        .progress-stat-value {
+            font-size: 20px;
+            color: #667eea;
+            font-weight: 700;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎨 Local Gaussian Splatting</h1>
+            <p class="subtitle">Upload your images and create stunning 3D reconstructions using your local GPU</p>
+            <div class="gpu-status" id="gpuStatus">Checking GPU...</div>
+        </div>
+
+        <div class="card">
+            <h2>Step 1: Upload Images</h2>
+            <p style="color: #666; margin: 10px 0 20px 0;">Upload at least 5 images of your scene from different angles</p>
+
+            <div class="upload-zone" id="uploadZone">
+                <div class="upload-icon">📸</div>
+                <h3>Drag & Drop Images Here</h3>
+                <p style="margin: 15px 0;">or</p>
+                <button class="btn" onclick="document.getElementById('fileInput').click()">Choose Files</button>
+                <input type="file" id="fileInput" multiple accept="image/png,image/jpeg,image/jpg,image/webp">
+                <p style="margin-top: 20px; color: #666; font-size: 14px;">Supported formats: JPG, PNG, WebP</p>
+            </div>
+
+            <div class="file-list" id="fileList"></div>
+        </div>
+
+        <div class="card" id="processingCard" style="display: none;">
+            <h2>Step 2: Choose Quality</h2>
+            <p style="color: #666; margin: 10px 0 20px 0;">Select the processing quality (higher quality = longer processing time)</p>
+
+            <div class="quality-selector">
+                <label class="quality-option">
+                    <input type="radio" name="quality" value="preview">
+                    <div>
+                        <strong>Preview</strong>
+                        <p style="font-size: 14px; color: #666; margin-top: 5px;">~10 minutes<br>7,000 iterations</p>
+                    </div>
+                </label>
+                <label class="quality-option selected">
+                    <input type="radio" name="quality" value="standard" checked>
+                    <div>
+                        <strong>Standard</strong>
+                        <p style="font-size: 14px; color: #666; margin-top: 5px;">~20 minutes<br>15,000 iterations</p>
+                    </div>
+                </label>
+                <label class="quality-option">
+                    <input type="radio" name="quality" value="high">
+                    <div>
+                        <strong>High</strong>
+                        <p style="font-size: 14px; color: #666; margin-top: 5px;">~30-40 minutes<br>30,000 iterations</p>
+                    </div>
+                </label>
+                <label class="quality-option">
+                    <input type="radio" name="quality" value="ultra">
+                    <div>
+                        <strong>Ultra</strong>
+                        <p style="font-size: 14px; color: #666; margin-top: 5px;">~60-90 minutes<br>50,000 iterations</p>
+                    </div>
+                </label>
+            </div>
+
+            <button class="btn" id="startBtn" onclick="startProcessing()" style="width: 100%; margin-top: 20px;">
+                Start Processing
+            </button>
+
+            <div class="progress-container" id="progressContainer">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill">0%</div>
+                </div>
+                <div class="status-message" id="statusMessage">Initializing...</div>
+            </div>
+
+            <div class="detailed-progress" id="detailedProgress">
+                <h4>Training Metrics</h4>
+                <div class="progress-stats">
+                    <div class="progress-stat">
+                        <div class="progress-stat-label">Iteration</div>
+                        <div class="progress-stat-value" id="statIteration">-</div>
+                    </div>
+                    <div class="progress-stat">
+                        <div class="progress-stat-label">Time per Iteration</div>
+                        <div class="progress-stat-value" id="statIterTime">-</div>
+                    </div>
+                    <div class="progress-stat">
+                        <div class="progress-stat-label">Estimated Time Left</div>
+                        <div class="progress-stat-value" id="statETA">-</div>
+                    </div>
+                    <div class="progress-stat">
+                        <div class="progress-stat-label">Training Speed</div>
+                        <div class="progress-stat-value" id="statRaysPerSec">-</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="error" id="errorMessage"></div>
+        </div>
+
+        <div class="card result-container" id="resultContainer">
+            <h3>Processing Complete!</h3>
+            <p>Your 3D model is ready for download</p>
+            <a class="btn download-btn" id="downloadBtn" download>Download 3D Model (.ply)</a>
+        </div>
+    </div>
+
+    <script>
+        let selectedFiles = [];
+        let projectId = null;
+        let jobId = null;
+        let statusInterval = null;
+
+        // Check GPU status
+        async function checkGPU() {
+            try {
+                const response = await fetch('/api/health');
+                const data = await response.json();
+                const gpuStatus = document.getElementById('gpuStatus');
+
+                if (data.gpu_available) {
+                    gpuStatus.textContent = '✓ GPU Available';
+                    gpuStatus.className = 'gpu-status available';
+                } else {
+                    gpuStatus.textContent = '✗ GPU Not Detected';
+                    gpuStatus.className = 'gpu-status unavailable';
+                }
+            } catch (error) {
+                console.error('Failed to check GPU status:', error);
+            }
+        }
+
+        // Setup upload zone
+        const uploadZone = document.getElementById('uploadZone');
+        const fileInput = document.getElementById('fileInput');
+
+        uploadZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadZone.classList.add('dragging');
+        });
+
+        uploadZone.addEventListener('dragleave', () => {
+            uploadZone.classList.remove('dragging');
+        });
+
+        uploadZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadZone.classList.remove('dragging');
+            handleFiles(e.dataTransfer.files);
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            handleFiles(e.target.files);
+        });
+
+        // Handle uploaded files
+        function handleFiles(files) {
+            selectedFiles = Array.from(files).filter(file =>
+                file.type.startsWith('image/')
+            );
+
+            displayFiles();
+
+            if (selectedFiles.length >= 5) {
+                document.getElementById('processingCard').style.display = 'block';
+            }
+        }
+
+        // Display selected files
+        function displayFiles() {
+            const fileList = document.getElementById('fileList');
+            fileList.innerHTML = '';
+
+            if (selectedFiles.length === 0) return;
+
+            const header = document.createElement('h3');
+            header.textContent = `${selectedFiles.length} image${selectedFiles.length > 1 ? 's' : ''} selected`;
+            header.style.marginBottom = '15px';
+            fileList.appendChild(header);
+
+            selectedFiles.forEach((file, index) => {
+                const item = document.createElement('div');
+                item.className = 'file-item';
+
+                const img = document.createElement('img');
+                img.src = URL.createObjectURL(file);
+                item.appendChild(img);
+
+                const info = document.createElement('div');
+                info.className = 'file-info';
+                info.innerHTML = `
+                    <div class="file-name">${file.name}</div>
+                    <div class="file-size">${(file.size / 1024 / 1024).toFixed(2)} MB</div>
+                `;
+                item.appendChild(info);
+
+                fileList.appendChild(item);
+            });
+        }
+
+        // Quality selector
+        document.querySelectorAll('.quality-option').forEach(option => {
+            option.addEventListener('click', () => {
+                document.querySelectorAll('.quality-option').forEach(o =>
+                    o.classList.remove('selected')
+                );
+                option.classList.add('selected');
+                option.querySelector('input').checked = true;
+            });
+        });
+
+        // Start processing
+        async function startProcessing() {
+            if (selectedFiles.length < 5) {
+                showError('Please upload at least 5 images');
+                return;
+            }
+
+            const startBtn = document.getElementById('startBtn');
+            startBtn.disabled = true;
+            startBtn.textContent = 'Processing...';
+
+            document.getElementById('progressContainer').style.display = 'block';
+            document.getElementById('errorMessage').style.display = 'none';
+
+            try {
+                // Create project
+                updateStatus('Creating project...');
+                const projectResponse = await fetch('/api/projects', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({name: 'Local Project'})
+                });
+                const project = await projectResponse.json();
+                projectId = project.id;
+
+                // Upload files
+                updateStatus('Uploading images...');
+                updateProgress(10);
+
+                const formData = new FormData();
+                selectedFiles.forEach(file => formData.append('files', file));
+
+                const uploadResponse = await fetch(`/api/projects/${projectId}/upload`, {
+                    method: 'POST',
+                    body: formData
+                });
+                const uploadResult = await uploadResponse.json();
+
+                if (!uploadResponse.ok) {
+                    throw new Error(uploadResult.error || 'Upload failed');
+                }
+
+                updateProgress(20);
+
+                // Start processing
+                const quality = document.querySelector('input[name="quality"]:checked').value;
+                updateStatus('Starting GPU processing...');
+
+                const processResponse = await fetch('/api/process', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        project_id: projectId,
+                        quality: quality
+                    })
+                });
+                const job = await processResponse.json();
+
+                if (!processResponse.ok) {
+                    throw new Error(job.error || 'Failed to start processing');
+                }
+
+                jobId = job.id;
+
+                // Poll for status
+                statusInterval = setInterval(checkStatus, 2000);
+
+            } catch (error) {
+                console.error('Processing error:', error);
+                showError(error.message);
+                startBtn.disabled = false;
+                startBtn.textContent = 'Start Processing';
+                document.getElementById('progressContainer').style.display = 'none';
+            }
+        }
+
+        // Check job status
+        async function checkStatus() {
+            try {
+                const response = await fetch(`/api/status/${jobId}`);
+                const job = await response.json();
+
+                updateProgress(job.progress || 0);
+                updateStatus(getStatusMessage(job));
+
+                // Update detailed metrics if available
+                if (job.metrics) {
+                    updateDetailedProgress(job.metrics);
+                }
+
+                if (job.status === 'completed') {
+                    clearInterval(statusInterval);
+                    document.getElementById('detailedProgress').style.display = 'none';
+                    showResult(job.model_url);
+                } else if (job.status === 'failed') {
+                    clearInterval(statusInterval);
+                    document.getElementById('detailedProgress').style.display = 'none';
+                    showError(job.error || 'Processing failed');
+                    document.getElementById('startBtn').disabled = false;
+                    document.getElementById('startBtn').textContent = 'Start Processing';
+                }
+            } catch (error) {
+                console.error('Status check error:', error);
+            }
+        }
+
+        function getStatusMessage(job) {
+            switch (job.status) {
+                case 'queued':
+                    return 'Queued for processing...';
+                case 'processing':
+                    if (job.progress < 30) return 'Running COLMAP Structure from Motion...';
+                    if (job.progress < 90) return 'Training Gaussian Splatting model...';
+                    return 'Finalizing model...';
+                case 'completed':
+                    return 'Processing complete!';
+                case 'failed':
+                    return 'Processing failed';
+                default:
+                    return 'Initializing...';
+            }
+        }
+
+        function updateProgress(percent) {
+            const fill = document.getElementById('progressFill');
+            fill.style.width = percent + '%';
+            fill.textContent = Math.round(percent) + '%';
+        }
+
+        function updateStatus(message) {
+            document.getElementById('statusMessage').textContent = message;
+        }
+
+        function updateDetailedProgress(metrics) {
+            const detailedProgress = document.getElementById('detailedProgress');
+            detailedProgress.style.display = 'block';
+            
+            if (metrics.iteration) {
+                document.getElementById('statIteration').textContent = metrics.iteration;
+            }
+            if (metrics.iter_time) {
+                document.getElementById('statIterTime').textContent = metrics.iter_time;
+            }
+            if (metrics.eta) {
+                document.getElementById('statETA').textContent = metrics.eta;
+            }
+            if (metrics.rays_per_sec) {
+                document.getElementById('statRaysPerSec').textContent = metrics.rays_per_sec;
+            }
+        }
+
+        function showError(message) {
+            const errorEl = document.getElementById('errorMessage');
+            errorEl.textContent = 'Error: ' + message;
+            errorEl.style.display = 'block';
+        }
+
+        function showResult(modelUrl) {
+            document.getElementById('processingCard').style.display = 'none';
+            const resultContainer = document.getElementById('resultContainer');
+            resultContainer.style.display = 'block';
+
+            const downloadBtn = document.getElementById('downloadBtn');
+            downloadBtn.href = modelUrl;
+        }
+
+        // Initialize
+        checkGPU();
+    </script>
+</body>
+</html>
