@@ -45,6 +45,18 @@ def index():
     return send_file('index.html')
 
 
+@app.route('/cesium')
+def cesium_viewer():
+    """Serve the CesiumJS 3D Tiles viewer"""
+    return send_from_directory('public', 'cesium-viewer.html')
+
+
+@app.route('/outputs/<path:filename>')
+def serve_outputs(filename):
+    """Serve output files (including 3D Tiles)"""
+    return send_from_directory('/workspace/outputs', filename)
+
+
 @app.route('/viewer/<path:filename>')
 def serve_viewer(filename):
     """Serve viewer files"""

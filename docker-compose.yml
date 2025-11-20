@@ -16,6 +16,8 @@ services:
       - ./local-server/index.html:/app/index.html:ro
       - ./local-server/nerfstudio_handler.py:/app/handler.py:ro
       - ./local-server/public:/app/public:ro
+      # Mount scripts for georeferencing and 3D Tiles conversion
+      - ./scripts:/app/scripts:ro
       # Mount volumes for persistent storage
       - ./local-data/uploads:/workspace/uploads
       - ./local-data/outputs:/workspace/outputs

@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gaussian Splat 3D Tiles Viewer - CesiumJS</title>
+    
+    <!-- CesiumJS -->
+    <script src="https://cesium.com/downloads/cesiumjs/releases/1.111/Build/Cesium/Cesium.js"></script>
+    <link href="https://cesium.com/downloads/cesiumjs/releases/1.111/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            overflow: hidden;
+        }
+        
+        #cesiumContainer {
+            width: 100vw;
+            height: 100vh;
+        }
+        
+        #controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(42, 42, 42, 0.95);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            max-width: 350px;
+            z-index: 1000;
+        }
+        
+        #controls h2 {
+            margin-bottom: 15px;
+            font-size: 18px;
+            color: #4fc3f7;
+        }
+        
+        .control-group {
+            margin-bottom: 15px;
+        }
+        
+        .control-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 13px;
+            color: #aaa;
+        }
+        
+        .control-group input,
+        .control-group select {
+            width: 100%;
+            padding: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+            color: white;
+            font-size: 13px;
+        }
+        
+        .control-group button {
+            width: 100%;
+            padding: 10px;
+            background: #4fc3f7;
+            border: none;
+            border-radius: 4px;
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        .control-group button:hover {
+            background: #29b6f6;
+        }
+        
+        .control-group button:disabled {
+            background: #555;
+            cursor: not-allowed;
+        }
+        
+        #status {
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 4px;
+            font-size: 12px;
+            margin-top: 10px;
+        }
+        
+        .status-loading {
+            color: #ffeb3b;
+        }
+        
+        .status-success {
+            color: #4caf50;
+        }
+        
+        .status-error {
+            color: #f44336;
+        }
+        
+        .info-text {
+            font-size: 11px;
+            color: #888;
+            margin-top: 5px;
+        }
+        
+        #toggle-controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(42, 42, 42, 0.95);
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            z-index: 999;
+            display: none;
+        }
+        
+        .hidden {
+            display: none !important;
+        }
+    </style>
+</head>
+<body>
+    <div id="cesiumContainer"></div>
+    
+    <button id="toggle-controls">☰ Controls</button>
+    
+    <div id="controls">
+        <h2>🌍 Gaussian Splat 3D Tiles Viewer</h2>
+        
+        <div class="control-group">
+            <label>Tileset URL</label>
+            <input type="text" id="tilesetUrl" value="/outputs/cesium_test/tiles/tileset.json" placeholder="Path to tileset.json">
+            <div class="info-text">Relative to server root or absolute URL</div>
+        </div>
+        
+        <div class="control-group">
+            <label>Location (Lat, Lon)</label>
+            <div style="display: flex; gap: 5px;">
+                <input type="number" id="lat" value="37.7694" step="0.0001" placeholder="Latitude" style="width: 50%;">
+                <input type="number" id="lon" value="-122.4862" step="0.0001" placeholder="Longitude" style="width: 50%;">
+            </div>
+        </div>
+        
+        <div class="control-group">
+            <button id="loadTileset">Load 3D Tiles</button>
+        </div>
+        
+        <div class="control-group">
+            <label>Imagery Provider</label>
+            <select id="imageryProvider">
+                <option value="osm">OpenStreetMap</option>
+                <option value="satellite">Bing Aerial (requires token)</option>
+                <option value="none">None</option>
+            </select>
+        </div>
+        
+        <div class="control-group">
+            <button id="zoomToTileset" disabled>Zoom to Tileset</button>
+        </div>
+        
+        <div id="status" class="status-loading">
+            Ready to load tileset...
+        </div>
+        
+        <div class="info-text" style="margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.1);">
+            <strong>Controls:</strong><br>
+            • Left click + drag: Rotate<br>
+            • Right click + drag: Pan<br>
+            • Scroll: Zoom<br>
+            • Middle click + drag: Tilt
+        </div>
+    </div>
+
+    <script>
+        // Initialize Cesium Viewer
+        const viewer = new Cesium.Viewer('cesiumContainer', {
+            baseLayerPicker: false,
+            geocoder: false,
+            homeButton: true,
+            sceneModePicker: true,
+            navigationHelpButton: true,
+            animation: false,
+            timeline: false,
+            fullscreenButton: true,
+            vrButton: false,
+            imageryProvider: new Cesium.OpenStreetMapImageryProvider({
+                url: 'https://a.tile.openstreetmap.org/'
+            })
+        });
+
+        // Don't set terrain - use default
+        // Enable depth testing for proper rendering
+        viewer.scene.globe.depthTestAgainstTerrain = false;
+
+        let currentTileset = null;
+
+        // Status helper
+        function setStatus(message, type = 'loading') {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.className = `status-${type}`;
+        }
+
+        // Load tileset function
+        async function loadTileset() {
+            const url = document.getElementById('tilesetUrl').value;
+            const lat = parseFloat(document.getElementById('lat').value);
+            const lon = parseFloat(document.getElementById('lon').value);
+
+            if (!url) {
+                setStatus('Please enter a tileset URL', 'error');
+                return;
+            }
+
+            console.log('Loading tileset from:', url);
+            setStatus('Loading 3D Tiles...', 'loading');
+
+            try {
+                // Remove existing tileset if any
+                if (currentTileset) {
+                    viewer.scene.primitives.remove(currentTileset);
+                    currentTileset = null;
+                }
+
+                // Load the tileset
+                console.log('Fetching tileset...');
+                currentTileset = await Cesium.Cesium3DTileset.fromUrl(url, {
+                    debugShowBoundingVolume: true,
+                    debugShowContentBoundingVolume: true,
+                    maximumScreenSpaceError: 16,
+                    maximumMemoryUsage: 512
+                });
+
+                console.log('Tileset loaded:', currentTileset);
+                viewer.scene.primitives.add(currentTileset);
+
+                // Wait for tileset to be ready
+                await currentTileset.readyPromise;
+                console.log('Tileset ready');
+
+                // Check if tileset has Gaussian splat content
+                if (currentTileset.extensionsUsed && 
+                    currentTileset.extensionsUsed.includes('KHR_gaussian_splatting')) {
+                    setStatus('✓ Gaussian Splat 3D Tiles loaded successfully!', 'success');
+                } else {
+                    setStatus('✓ 3D Tiles loaded (no Gaussian splat extension detected)', 'success');
+                }
+
+                // Enable zoom button
+                document.getElementById('zoomToTileset').disabled = false;
+
+                // Auto-zoom to tileset
+                console.log('Zooming to tileset...');
+                await viewer.zoomTo(currentTileset);
+                console.log('Zoom complete');
+
+            } catch (error) {
+                console.error('Error loading tileset:', error);
+                console.error('Error stack:', error.stack);
+                setStatus(`Error: ${error.message}`, 'error');
+            }
+        }
+
+        // Zoom to tileset
+        async function zoomToTileset() {
+            if (currentTileset) {
+                await viewer.zoomTo(currentTileset);
+                setStatus('Zoomed to tileset', 'success');
+            }
+        }
+
+        // Change imagery provider
+        function changeImageryProvider(type) {
+            const layers = viewer.imageryLayers;
+            layers.removeAll();
+
+            switch(type) {
+                case 'osm':
+                    layers.addImageryProvider(new Cesium.OpenStreetMapImageryProvider({
+                        url: 'https://a.tile.openstreetmap.org/'
+                    }));
+                    break;
+                case 'satellite':
+                    // Note: Requires Bing Maps API key
+                    // For now, fallback to OSM
+                    alert('Bing Aerial requires an API key. Using OSM instead.');
+                    layers.addImageryProvider(new Cesium.OpenStreetMapImageryProvider({
+                        url: 'https://a.tile.openstreetmap.org/'
+                    }));
+                    break;
+                case 'none':
+                    // No imagery
+                    break;
+            }
+        }
+
+        // Event listeners
+        document.getElementById('loadTileset').addEventListener('click', loadTileset);
+        document.getElementById('zoomToTileset').addEventListener('click', zoomToTileset);
+        document.getElementById('imageryProvider').addEventListener('change', (e) => {
+            changeImageryProvider(e.target.value);
+        });
+
+        // Toggle controls
+        const toggleBtn = document.getElementById('toggle-controls');
+        const controls = document.getElementById('controls');
+        
+        toggleBtn.addEventListener('click', () => {
+            controls.classList.toggle('hidden');
+            toggleBtn.classList.toggle('hidden');
+        });
+
+        // Auto-hide controls on mobile
+        if (window.innerWidth < 768) {
+            controls.classList.add('hidden');
+            toggleBtn.style.display = 'block';
+        }
+
+        // Set initial camera position (San Francisco Bay Area)
+        viewer.camera.setView({
+            destination: Cesium.Cartesian3.fromDegrees(-122.4862, 37.7694, 1000),
+            orientation: {
+                heading: Cesium.Math.toRadians(0),
+                pitch: Cesium.Math.toRadians(-45),
+                roll: 0.0
+            }
+        });
+
+        setStatus('Ready to load tileset. Click "Load 3D Tiles" to begin.', 'success');
+
+        console.log('CesiumJS Gaussian Splat Viewer initialized');
+        console.log('Cesium version:', Cesium.VERSION);
+    </script>
+</body>
+</html>
+
