@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gaussian Splat 3D Tiles Viewer - CesiumJS</title>
     
-    <!-- CesiumJS -->
-    <script src="https://cesium.com/downloads/cesiumjs/releases/1.111/Build/Cesium/Cesium.js"></script>
-    <link href="https://cesium.com/downloads/cesiumjs/releases/1.111/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+    <!-- CesiumJS 1.135 - Latest with full Gaussian splat support -->
+    <script src="https://cesium.com/downloads/cesiumjs/releases/1.135/Build/Cesium/Cesium.js"></script>
+    <link href="https://cesium.com/downloads/cesiumjs/releases/1.135/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
     
     <style>
         * {
@@ -239,18 +239,43 @@
                 // Load the tileset
                 console.log('Fetching tileset...');
                 currentTileset = await Cesium.Cesium3DTileset.fromUrl(url, {
-                    debugShowBoundingVolume: true,
-                    debugShowContentBoundingVolume: true,
+                    debugShowBoundingVolume: false,
+                    debugShowContentBoundingVolume: false,
                     maximumScreenSpaceError: 16,
-                    maximumMemoryUsage: 512
+                    maximumMemoryUsage: 512,
+                    // Enable Gaussian splat rendering
+                    enableDebugWireframe: false,
+                    pointCloudShading: {
+                        attenuation: false,
+                        geometricErrorScale: 1.0,
+                        maximumAttenuation: undefined,
+                        baseResolution: undefined,
+                        eyeDomeLighting: true,
+                        eyeDomeLightingStrength: 1.0,
+                        eyeDomeLightingRadius: 1.0
+                    }
                 });
 
                 console.log('Tileset loaded:', currentTileset);
+                console.log('Extensions used:', currentTileset.asset?.extensionsUsed);
+                
+                // Add tile load event listener to check content type
+                currentTileset.tileLoad.addEventListener(function(tile) {
+                    console.log('Tile loaded:', tile);
+                    console.log('Tile content type:', tile.content?.constructor?.name);
+                    if (tile.content && tile.content.constructor.name === 'GaussianSplat3DTileContent') {
+                        console.log('✓ GaussianSplat3DTileContent detected! Splats should render properly.');
+                    } else if (tile.content) {
+                        console.warn('⚠ Content type is not GaussianSplat3DTileContent:', tile.content.constructor.name);
+                    }
+                });
+                
                 viewer.scene.primitives.add(currentTileset);
 
                 // Wait for tileset to be ready
                 await currentTileset.readyPromise;
                 console.log('Tileset ready');
+                console.log('CesiumJS Version:', Cesium.VERSION);
 
                 // Check if tileset has Gaussian splat content
                 if (currentTileset.extensionsUsed && 

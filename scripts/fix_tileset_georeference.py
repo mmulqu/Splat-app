@@ -81,7 +81,7 @@ def create_transform_matrix(lat_deg, lon_deg, h, scale=1.0):
 
 
 def update_tileset_transform(tileset_path, lat, lon, height, scale):
-    """Update tileset.json with proper ECEF transform."""
+    """Update tileset.json with proper ECEF transform and extension declarations."""
     # Read existing tileset
     with open(tileset_path, 'r') as f:
         tileset = json.load(f)
@@ -92,6 +92,18 @@ def update_tileset_transform(tileset_path, lat, lon, height, scale):
     # Add transform to root tile
     tileset['root']['transform'] = transform
     
+    # Add extension declarations at tileset level (required for CesiumJS to recognize Gaussian splats)
+    # Check if the glTF content uses KHR_gaussian_splatting
+    if 'extensionsUsed' not in tileset:
+        tileset['extensionsUsed'] = []
+    
+    # Add 3D Tiles extension for glTF content
+    if '3DTILES_content_gltf' not in tileset['extensionsUsed']:
+        tileset['extensionsUsed'].append('3DTILES_content_gltf')
+    
+    # Note: The glTF files themselves declare KHR_gaussian_splatting,
+    # but we need to ensure the tileset knows about glTF content
+    
     # Update bounding volume to region (optional, but more accurate)
     # For now, keep the existing box but add a note
     if 'boundingVolume' not in tileset['root']:
@@ -101,9 +113,10 @@ def update_tileset_transform(tileset_path, lat, lon, height, scale):
     with open(tileset_path, 'w') as f:
         json.dump(tileset, f, indent=2)
     
-    print(f"✓ Updated tileset transform")
+    print(f"✓ Updated tileset transform and extensions")
     print(f"  Location: ({lat}, {lon}) at {height}m")
     print(f"  Scale: {scale}x")
+    print(f"  Extensions: {tileset.get('extensionsUsed', [])}")
     print(f"  Transform matrix (column-major):")
     for i in range(4):
         row = transform[i*4:(i+1)*4]
