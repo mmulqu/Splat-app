@@ -54,7 +54,7 @@ def serve_viewer(filename):
 
 @app.route('/api/upload-ply', methods=['POST'])
 def upload_ply():
-    """Upload a PLY file for viewing"""
+    """Upload a PLY file and start Nerfstudio viewer"""
     try:
         if 'file' not in request.files:
             return jsonify({'error': 'No file provided'}), 400
@@ -78,14 +78,104 @@ def upload_ply():
         # Save file
         file.save(str(filepath))
         
-        # Return URL to access the file
+        # For PLY files, we need to find an existing trained model's config
+        # or use a recent one. The viewer needs a config.yml, not just a PLY.
+        # Let's find the most recent config file from training outputs
+        config_files = list(OUTPUT_FOLDER.rglob("config.yml"))
+        
+        if not config_files:
+            return jsonify({
+                'success': False,
+                'error': 'No trained models found. Please train a model first, or the viewer needs an existing model config to run.',
+                'message': 'The Nerfstudio viewer requires a trained model config file. Train a model first using the "Upload & Process" tab.'
+            }), 400
+        
+        # Use the most recent config
+        config_file = sorted(config_files, key=lambda x: x.stat().st_mtime)[-1]
+        
+        # Kill any existing viewer process first
+        try:
+            subprocess.run(['pkill', '-f', 'ns-viewer'], check=False, timeout=5)
+        except:
+            pass
+        
+        # Start viewer in background with the most recent trained model
+        # Note: The viewer will show the trained model, not the uploaded PLY
+        # To view the uploaded PLY, users should use external tools
+        viewer_cmd = [
+            'ns-viewer',
+            '--load-config', str(config_file),
+        ]
+        
+        print(f"Starting viewer with config: {config_file}")
+        
+        # Start viewer process in background
+        subprocess.Popen(
+            viewer_cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        
+        # Return success with explanation
         return jsonify({
             'success': True,
-            'url': f'/api/models/viewer/{filename}'
+            'message': 'Nerfstudio viewer started with your most recent trained model',
+            'viewer_url': 'http://localhost:7007',
+            'note': 'The viewer shows your trained model. To view the uploaded PLY, use external tools like SuperSplat.',
+            'uploaded_file': str(filepath),
+            'config_used': str(config_file)
         }), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+
+@app.route('/api/start-viewer', methods=['POST'])
+def start_viewer():
+    """Start Nerfstudio viewer with the most recent trained model"""
+    try:
+        # Find the most recent config file from training outputs
+        config_files = list(OUTPUT_FOLDER.rglob("config.yml"))
+        
+        if not config_files:
+            return jsonify({
+                'success': False,
+                'error': 'No trained models found',
+                'message': 'Please train a model first using the "Upload & Process" tab.'
+            }), 400
+        
+        # Use the most recent config
+        config_file = sorted(config_files, key=lambda x: x.stat().st_mtime)[-1]
+        
+        # Kill any existing viewer process first
+        try:
+            subprocess.run(['pkill', '-f', 'ns-viewer'], check=False, timeout=5)
+        except:
+            pass
+        
+        # Start viewer in background
+        viewer_cmd = [
+            'ns-viewer',
+            '--load-config', str(config_file),
+        ]
+        
+        print(f"Starting viewer with config: {config_file}")
+        
+        # Start viewer process in background
+        subprocess.Popen(
+            viewer_cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        
+        # Return success
+        return jsonify({
+            'success': True,
+            'message': 'Nerfstudio viewer started',
+            'viewer_url': 'http://localhost:7007',
+            'config_used': str(config_file)
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/health', methods=['GET'])
 def health():

@@ -444,51 +444,102 @@
             </div>
 
             <div id="tab-viewer" class="tab-content">
-                <h2>Nerfstudio Viewer</h2>
-                <p style="color: #666; margin-bottom: 20px;">
-                    Access the live training viewer. Note: This only works while training is active or if the viewer is
-                    running.
-                    <br>
-                    <a href="http://localhost:7007" target="_blank" style="color: #667eea; text-decoration: none;">Open
-                        in new tab ↗</a>
-                </p>
-                <iframe src="http://localhost:7007" class="viewer-frame" title="Nerfstudio Viewer"></iframe>
-            </div>
+                <h2>Nerfstudio Viewer (Live)</h2>
 
-            <div id="tab-plyviewer" class="tab-content">
-                <h2>View Gaussian Splat Models</h2>
-                <p style="color: #666; margin: 10px 0 20px 0;">
-                    To view your Gaussian Splat models properly with full color and detail:
-                </p>
+                <div
+                    style="background: #f8f9ff; padding: 25px; border-radius: 8px; margin-bottom: 20px; text-align: center;">
+                    <h3 style="margin-top: 0; color: #667eea;">🎬 Open Viewer</h3>
+                    <p style="margin: 15px 0; color: #666;">
+                        The Nerfstudio viewer runs on port 7007 and shows your training progress or completed models
+                    </p>
+                    <a href="http://localhost:7007" target="_blank" class="btn"
+                        style="display: inline-block; text-decoration: none; font-size: 16px; padding: 12px 30px;">
+                        Open Viewer in New Tab ↗
+                    </a>
+                </div>
 
-                <div style="background: #f8f9ff; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
-                    <h3 style="margin-top: 0; color: #667eea;">✨ Recommended: Use Nerfstudio Viewer</h3>
-                    <p>The Nerfstudio viewer (port 7007) is specifically designed for Gaussian Splats and will render
-                        them correctly with all colors and properties.</p>
-                    <ol style="line-height: 1.8;">
-                        <li>After training completes, the viewer stays active</li>
-                        <li>Click the <strong>"Nerfstudio Viewer (Live)"</strong> tab above</li>
-                        <li>Or open <a href="http://localhost:7007" target="_blank"
-                                style="color: #667eea;">http://localhost:7007</a> directly</li>
-                    </ol>
+                <div
+                    style="background: #e7f3ff; padding: 20px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #2196F3;">
+                    <h4 style="margin-top: 0; color: #1976D2;">ℹ️ When is the viewer available?</h4>
+                    <ul style="margin: 10px 0; padding-left: 20px; line-height: 1.8;">
+                        <li><strong>During training:</strong> Automatically starts and shows live progress</li>
+                        <li><strong>After training:</strong> Stays running so you can view the completed model</li>
+                        <li><strong>Manual start:</strong> Use the "View Trained Models" tab to start it anytime</li>
+                    </ul>
                 </div>
 
                 <div style="background: #fff3cd; padding: 20px; border-radius: 8px; border-left: 4px solid #ffc107;">
-                    <h3 style="margin-top: 0; color: #856404;">📦 Download PLY Files</h3>
-                    <p>Your trained models are saved as <code>.ply</code> files in:</p>
-                    <code style="display: block; background: white; padding: 10px; border-radius: 4px; margin: 10px 0;">
-                        local-data/outputs/[project-id]/point_cloud.ply
-                    </code>
-                    <p style="margin-bottom: 0;">You can download these files and view them in specialized tools like:
+                    <h4 style="margin-top: 0; color: #856404;">⚠️ Viewer not loading?</h4>
+                    <p style="margin: 10px 0;">If the viewer shows a connection error:</p>
+                    <ol style="margin: 10px 0; padding-left: 20px; line-height: 1.8;">
+                        <li>Make sure you've trained a model first</li>
+                        <li>Go to the <strong>"View Trained Models"</strong> tab</li>
+                        <li>Click <strong>"Start Viewer"</strong></li>
+                        <li>Then come back here and click "Open Viewer in New Tab"</li>
+                    </ol>
+                </div>
+
+                <!-- Keep iframe for those who want to try embedding -->
+                <details style="margin-top: 20px;">
+                    <summary style="cursor: pointer; padding: 10px; background: #f5f5f5; border-radius: 4px;">
+                        <strong>Try Embedded Viewer (Experimental)</strong>
+                    </summary>
+                    <div style="margin-top: 15px;">
+                        <p style="color: #666; font-size: 14px; margin-bottom: 10px;">
+                            Note: The embedded viewer may not work due to browser security policies. Opening in a new
+                            tab is recommended.
+                        </p>
+                        <iframe src="http://localhost:7007" class="viewer-frame" title="Nerfstudio Viewer"></iframe>
+                    </div>
+                </details>
+            </div>
+
+            <div id="tab-plyviewer" class="tab-content">
+                <h2>View Trained Models</h2>
+                <p style="color: #666; margin: 10px 0 20px 0;">
+                    Start the Nerfstudio viewer to view your trained Gaussian Splat models
+                </p>
+
+                <div
+                    style="background: #f8f9ff; padding: 25px; border-radius: 8px; margin-bottom: 20px; text-align: center;">
+                    <h3 style="margin-top: 0; color: #667eea;">🎬 Launch Nerfstudio Viewer</h3>
+                    <p style="margin: 15px 0;">The viewer will show your most recently trained model</p>
+                    <button class="btn" id="startViewerBtn" style="font-size: 16px; padding: 12px 30px;">
+                        Start Viewer
+                    </button>
+                    <p style="margin: 15px 0 0 0; color: #666; font-size: 14px;">
+                        Viewer will open at <a href="http://localhost:7007" target="_blank"
+                            style="color: #667eea;">localhost:7007</a>
                     </p>
-                    <ul style="margin-top: 10px;">
-                        <li><a href="https://playcanvas.com/supersplat/editor" target="_blank"
-                                style="color: #667eea;">SuperSplat</a> (Web-based, best for Gaussian Splats)</li>
-                        <li><a href="https://antimatter15.com/splat/" target="_blank"
-                                style="color: #667eea;">Antimatter15 Viewer</a> (Web-based)</li>
-                        <li>CloudCompare (Desktop app)</li>
-                        <li>MeshLab (Desktop app)</li>
+                </div>
+
+                <div
+                    style="background: #e7f3ff; padding: 20px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #2196F3;">
+                    <h4 style="margin-top: 0; color: #1976D2;">ℹ️ About the Nerfstudio Viewer</h4>
+                    <ul style="margin: 10px 0; padding-left: 20px; line-height: 1.8;">
+                        <li>Shows your trained Gaussian Splat models with full color and detail</li>
+                        <li>Interactive 3D viewing with mouse controls</li>
+                        <li>Automatically starts during training</li>
+                        <li>Can be manually started here to view completed models</li>
                     </ul>
+                </div>
+
+                <div style="background: #fff3cd; padding: 20px; border-radius: 8px; border-left: 4px solid #ffc107;">
+                    <h4 style="margin-top: 0; color: #856404;">📦 View External PLY Files</h4>
+                    <p>To view PLY files from other sources, use these external tools:</p>
+                    <ul style="margin: 10px 0; padding-left: 20px;">
+                        <li><a href="https://playcanvas.com/supersplat/editor" target="_blank"
+                                style="color: #667eea;"><strong>SuperSplat</strong></a> - Best for Gaussian Splats
+                            (web-based)</li>
+                        <li><a href="https://antimatter15.com/splat/" target="_blank"
+                                style="color: #667eea;"><strong>Antimatter15 Viewer</strong></a> - Simple web viewer
+                        </li>
+                        <li><strong>CloudCompare</strong> - Desktop app for point clouds</li>
+                        <li><strong>MeshLab</strong> - Desktop 3D mesh viewer</li>
+                    </ul>
+                    <p style="margin: 10px 0 0 0; font-size: 14px;">
+                        Your trained models are saved in: <code>local-data/outputs/[project-id]/point_cloud.ply</code>
+                    </p>
                 </div>
             </div>
         </div>
@@ -906,91 +957,42 @@
             };
         }
 
-        // PLY File Upload Handling
-        let uploadedPlyFile = null;
-        const plyFileInput = document.getElementById('plyFileInput');
-        const plyUploadZone = document.getElementById('plyUploadZone');
-        const plyFileInfo = document.getElementById('plyFileInfo');
-        const plyFileName = document.getElementById('plyFileName');
-        const viewPlyBtn = document.getElementById('viewPlyBtn');
+        // Start Viewer Button
+        const startViewerBtn = document.getElementById('startViewerBtn');
+        if (startViewerBtn) {
+            startViewerBtn.addEventListener('click', async () => {
+                try {
+                    startViewerBtn.disabled = true;
+                    startViewerBtn.textContent = 'Starting viewer...';
 
-        // Handle file selection
-        plyFileInput.addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (file && file.name.endsWith('.ply')) {
-                handlePlyFile(file);
-            } else {
-                showError('Please select a valid .ply file');
-            }
-        });
+                    const response = await fetch('/api/start-viewer', {
+                        method: 'POST'
+                    });
 
-        // Drag and drop for PLY
-        plyUploadZone.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            plyUploadZone.style.borderColor = '#667eea';
-            plyUploadZone.style.background = '#f8f9ff';
-        });
+                    const result = await response.json();
 
-        plyUploadZone.addEventListener('dragleave', () => {
-            plyUploadZone.style.borderColor = '#ddd';
-            plyUploadZone.style.background = 'transparent';
-        });
+                    if (!response.ok) {
+                        throw new Error(result.error || result.message || 'Failed to start viewer');
+                    }
 
-        plyUploadZone.addEventListener('drop', (e) => {
-            e.preventDefault();
-            plyUploadZone.style.borderColor = '#ddd';
-            plyUploadZone.style.background = 'transparent';
+                    startViewerBtn.textContent = '✓ Viewer Started!';
 
-            const file = e.dataTransfer.files[0];
-            if (file && file.name.endsWith('.ply')) {
-                handlePlyFile(file);
-            } else {
-                showError('Please drop a valid .ply file');
-            }
-        });
+                    // Wait a moment then switch to viewer tab and open window
+                    setTimeout(() => {
+                        switchTab('viewer');
+                        window.open('http://localhost:7007', '_blank');
+                        startViewerBtn.textContent = 'Start Viewer';
+                        startViewerBtn.disabled = false;
+                    }, 1500);
 
-        function handlePlyFile(file) {
-            uploadedPlyFile = file;
-            plyFileName.textContent = file.name;
-            plyFileInfo.style.display = 'block';
-        }
-
-        // View PLY button
-        viewPlyBtn.addEventListener('click', async () => {
-            if (!uploadedPlyFile) return;
-
-            try {
-                viewPlyBtn.disabled = true;
-                viewPlyBtn.textContent = 'Uploading...';
-
-                // Upload file to server
-                const formData = new FormData();
-                formData.append('file', uploadedPlyFile);
-
-                const response = await fetch('/api/upload-ply', {
-                    method: 'POST',
-                    body: formData
-                });
-
-                const result = await response.json();
-
-                if (!response.ok) {
-                    throw new Error(result.error || 'Upload failed');
+                } catch (error) {
+                    console.error('Error:', error);
+                    showError('Failed to start viewer: ' + error.message);
+                    startViewerBtn.textContent = 'Start Viewer';
+                    startViewerBtn.disabled = false;
                 }
-
-                // Open viewer with server URL
-                const viewerUrl = `/viewer/index.html?url=${encodeURIComponent(result.url)}`;
-                window.open(viewerUrl, '_blank');
-
-                viewPlyBtn.textContent = 'View in 3D';
-                viewPlyBtn.disabled = false;
-            } catch (error) {
-                console.error('Error:', error);
-                showError('Failed to upload PLY file: ' + error.message);
-                viewPlyBtn.textContent = 'View in 3D';
-                viewPlyBtn.disabled = false;
-            }
-        });
+            });
+        }
 
         // Initialize
         checkGPU();
