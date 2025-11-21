@@ -174,16 +174,22 @@ def main():
         help="Output directory for 3D Tiles"
     )
     parser.add_argument(
+        "--transform",
+        type=str,
+        default=None,
+        help="Transform JSON file (from create_georef_from_gps.py) - recommended"
+    )
+    parser.add_argument(
         "--lat",
         type=float,
-        required=True,
-        help="Latitude in degrees"
+        default=None,
+        help="Latitude in degrees (only if not using --transform)"
     )
     parser.add_argument(
         "--lon",
         type=float,
-        required=True,
-        help="Longitude in degrees"
+        default=None,
+        help="Longitude in degrees (only if not using --transform)"
     )
     parser.add_argument(
         "--height",
@@ -194,8 +200,8 @@ def main():
     parser.add_argument(
         "--scale",
         type=float,
-        default=10.0,
-        help="Scale factor (default: 10)"
+        default=None,
+        help="Scale factor (default: from transform or 10.0)"
     )
     parser.add_argument(
         "--quality",
@@ -206,6 +212,44 @@ def main():
     )
     
     args = parser.parse_args()
+    
+    # Load transform from file if provided
+    if args.transform:
+        print(f"\n📍 Loading transform from {args.transform}...")
+        with open(args.transform, 'r') as f:
+            transform_data = json.load(f)
+        
+        # Extract parameters from transform file
+        lat = transform_data['origin']['geodetic']['lat']
+        lon = transform_data['origin']['geodetic']['lon']
+        height = transform_data['origin']['geodetic']['height']
+        scale = transform_data['metadata']['scale']
+        
+        print(f"  ✓ Lat: {lat:.6f}°")
+        print(f"  ✓ Lon: {lon:.6f}°")
+        print(f"  ✓ Height: {height:.2f}m")
+        print(f"  ✓ Scale: {scale:.2f}x")
+        
+        # Allow command-line overrides
+        if args.scale is not None:
+            scale = args.scale
+            print(f"  ⚠ Scale overridden to {scale}x")
+    else:
+        # Use command-line arguments
+        if args.lat is None or args.lon is None:
+            print("❌ ERROR: Must provide either --transform or both --lat and --lon")
+            sys.exit(1)
+        
+        lat = args.lat
+        lon = args.lon
+        height = args.height
+        scale = args.scale if args.scale is not None else 10.0
+    
+    # Store in args for rest of function
+    args.lat = lat
+    args.lon = lon
+    args.height = height
+    args.scale = scale
     
     input_ply = Path(args.input)
     output_dir = Path(args.output)

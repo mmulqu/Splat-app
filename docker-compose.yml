@@ -21,6 +21,8 @@ services:
       # Mount volumes for persistent storage
       - ./local-data/uploads:/workspace/uploads
       - ./local-data/outputs:/workspace/outputs
+      # Mount data directory for training images
+      - ./data:/workspace/data:ro
       # Cache directory to avoid re-downloading models
       - ./local-data/cache:/home/user/.cache/
       # Optional: Mount your own images directory

@@ -363,42 +363,30 @@ Then reload in browser (Ctrl+Shift+R to hard refresh).
 
 ## Next Steps
 
-### 1. Real GPS Georeferencing (High Priority)
+### 1. Real GPS Georeferencing ✅ (COMPLETED!)
 
-**Goal**: Use actual GPS/IMU data from images instead of "fake" georeferencing
-
-**Requirements**:
-- Images with EXIF GPS metadata (lat, lon, altitude)
-- Or: External GPS log file with timestamps
-- Or: Ground control points (GCPs) with known coordinates
-
-**Approach A: GPS in EXIF**
-```python
-from PIL import Image
-from PIL.ExifTags import TAGS, GPSTAGS
-
-def extract_gps(image_path):
-    img = Image.open(image_path)
-    exif = img._getexif()
-    # Extract GPSInfo tag
-    # Convert to decimal degrees
-    # Return (lat, lon, altitude)
-```
-
-**Approach B: Colmap with GPS**
-- Add GPS priors to Colmap reconstruction
-- Export camera poses in ECEF or geodetic coordinates
-- Use camera centroid as reference point
-
-**Approach C: Manual GCPs**
-- Identify 3+ points in scene with known GPS coordinates
-- Use point correspondences to estimate similarity transform
-- Apply transform to align Nerfstudio output to real-world
+**Status**: ✅ **IMPLEMENTED AND TESTED**
 
 **Implementation**:
-- Modify `scripts/georef_splats.py` to accept GPS data
-- Calculate proper ECEF transform from GPS coordinates
-- Update pipeline to use real georeferencing
+- ✅ `scripts/extract_gps_from_images.py` - Extract GPS from EXIF data
+- ✅ `scripts/create_georef_from_gps.py` - Create ECEF transform from GPS
+- ✅ Updated `scripts/convert_to_spz_3dtiles.py` - Accept transform JSON
+- ✅ Tested with Pole2 dataset (81 iPhone photos, Central NC)
+
+**Results**:
+- All 81 Pole2 images have GPS data
+- Scene centroid: 35.780537°N, 78.656525°W, 112.98m altitude
+- Auto-estimated scale: 11.56x (from 23m scene extent)
+- Transform ready for training and conversion
+
+**Workflow**:
+1. Extract GPS: `extract_gps_from_images.py`
+2. Create transform: `create_georef_from_gps.py`
+3. Train splat: `ns-train splatfacto`
+4. Convert to 3D Tiles: `convert_to_spz_3dtiles.py --transform`
+5. View in CesiumJS at real GPS location
+
+**Documentation**: See `WORKFLOW_POLE2.md` and `README_GPS_PIPELINE.md`
 
 ---
 
